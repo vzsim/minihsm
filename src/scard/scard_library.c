@@ -105,9 +105,8 @@ sc_apdu_transmit(const char* string, Apdu_t* apdu)
 		if (stringify_hex(string, apdu->cmd, &apdu->cmdLen))
 			break;
 		
-		printf("    >> ");
-		print_bytes(apdu->cmd, apdu->cmdLen);
-
+		printf("    >> %s\n", string);
+		
 		rv = SCardTransmit(connHandle, SCARD_PCI_T1, apdu->cmd, apdu->cmdLen, NULL, apdu->resp, &apdu->respLen);
 		if (rv != SCARD_S_SUCCESS)
 			break;
