@@ -20,16 +20,14 @@ static void
 init_apdu(Apdu_t* apdu)
 {
 	memset(apdu, 0x00, sizeof(Apdu_t));
+	apdu->respLen = RAPDU_LENGTH;
 }
 
 LONG
 sc_create_ctx(Apdu_t* apdu)
 {
 	init_apdu(apdu);
-	
 	memset(readersState, 0x00, sizeof(SCARD_READERSTATE));
-	readersState[0].szReader = &readersList[0];
-	readersState[0].dwCurrentState = SCARD_STATE_EMPTY;
 
 	return SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &ctx);
 }
@@ -37,13 +35,11 @@ sc_create_ctx(Apdu_t* apdu)
 void
 sc_delete_ctx(void)
 {
-	if (ctx) {
+	if (ctx)
 		SCardReleaseContext(ctx);
-	}
 
-	if (readersList != NULL) {
+	if (readersList != NULL)
 		free(readersList);
-	}
 }
 
 LONG
@@ -65,10 +61,6 @@ sc_get_available_readers(void)
 		}
 
 		rv = SCardListReaders(ctx, NULL, readersList, &readersListLen);
-		if (rv != SCARD_S_SUCCESS) {
-			break;
-		}
-
 	} while (0);
 
 	print_available_readers();
@@ -76,7 +68,7 @@ sc_get_available_readers(void)
 	return rv;
 }
 
-
+#if(0)
 LONG
 sc_get_reader_status(void)
 {
@@ -102,20 +94,20 @@ sc_get_reader_status(void)
 	return rv;
 
 }
+#endif
 
 LONG
 sc_apdu_transmit(const char* string, Apdu_t* apdu)
 {
-	LONG rv;
-
-	if (stringify_hex(string, apdu->cmd, &apdu->cmdLen)) {
-		return 1;
-	}
-	
-	printf("    >> ");
-	print_bytes(apdu->cmd, apdu->cmdLen);
+	LONG rv = SCARD_E_INVALID_VALUE;
 
 	do {
+		if (stringify_hex(string, apdu->cmd, &apdu->cmdLen))
+			break;
+		
+		printf("    >> ");
+		print_bytes(apdu->cmd, apdu->cmdLen);
+
 		rv = SCardTransmit(connHandle, SCARD_PCI_T1, apdu->cmd, apdu->cmdLen, NULL, apdu->resp, &apdu->respLen);
 		if (rv != SCARD_S_SUCCESS)
 			break;
@@ -131,19 +123,16 @@ LONG
 sc_card_connect(void)
 {
 	LONG rv;
+	readersState[0].szReader = &readersList[0];
+	readersState[0].dwCurrentState = SCARD_STATE_EMPTY;
 
 	do {
 		// Blocks until either the card is inserted or 10 milliseconds elapsed.
-		rv = SCardGetStatusChange(ctx, INFINITE, readersState, 1);
+		rv = SCardGetStatusChange(ctx, 10, readersState, 1);
 		if (rv != SCARD_S_SUCCESS)
 			break;
 		
 		rv = SCardConnect(ctx, readersList, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connHandle, &connProtocol);
-		if (rv != SCARD_S_SUCCESS)
-			break;
-		
-		const char* temp = connProtocol == SCARD_PROTOCOL_T0 ? "T=0" : "T=1";
-		printf("    Card inserted.\n    connProtocol: %s\n    connHandle: %08lX\n", temp, connHandle);
 	} while (0);
 
 	return rv;

@@ -20,12 +20,6 @@ main(int argc, char* argv[])
 		return 1;
 	}
 
-	if (sc_get_reader_status()) {
-		sc_delete_ctx();
-		return 1;
-	}
-	
-
 	rv = sc_apdu_transmit("00a40400", &apdu);
 	if (rv) {
 		sc_card_disconnect();
