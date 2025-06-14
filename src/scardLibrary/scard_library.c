@@ -7,7 +7,6 @@ static SCARDHANDLE connHandle = 0;
 static DWORD connProtocol = 0;
 static SCARD_READERSTATE readersState[1];
 
-
 static void
 print_available_readers(void)
 {
@@ -27,66 +26,56 @@ LONG
 sc_create_ctx(Apdu_t* apdu)
 {
 	init_apdu(apdu);
-	memset(readersState, 0x00, sizeof(SCARD_READERSTATE));
-	LONG rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &ctx);
-
-	if (rv != SCARD_S_SUCCESS) {
-		printf("ERROR: failed to establish context. "
-				"Reason: %s\n", pcsc_stringify_error(rv));
-		return rv;
-	}
 	
-	printf("Connection to PCSC established.\n    ctx: %08lX\n", ctx);
-	return rv;
+	memset(readersState, 0x00, sizeof(SCARD_READERSTATE));
+	readersState[0].szReader = &readersList[0];
+	readersState[0].dwCurrentState = SCARD_STATE_EMPTY;
+
+	return SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &ctx);
 }
 
 void
 sc_delete_ctx(void)
 {
 	if (ctx) {
-		LONG rv = SCardReleaseContext(ctx);
-		if (rv != SCARD_S_SUCCESS) {
-			printf("WARNING: failed to release context.\n"
-					"Reason: %s\n", pcsc_stringify_error(rv));
-		}
+		SCardReleaseContext(ctx);
 	}
 
 	if (readersList != NULL) {
 		free(readersList);
 	}
-
-	printf("Connection to PCSC closed.\n");
 }
 
 LONG
 sc_get_available_readers(void)
 {
-	// Get the length of the buffer required for the name list of available readers
-	LONG rv = SCardListReaders(ctx, NULL, NULL, &readersListLen);
-	if (rv != SCARD_S_SUCCESS) {
-		printf("ERROR: failed to retrieve a list of readers. "
-				"Reason: %s\n", pcsc_stringify_error(rv));
-		return rv;
-	}
+	LONG rv = SCARD_S_SUCCESS;
+	do {
+		// Get the length of the buffer required for the name list of available readers
+		rv = SCardListReaders(ctx, NULL, NULL, &readersListLen);
+		if (rv != SCARD_S_SUCCESS) {
+			break;
+		}
 
-	// allocate buffer for the name list of available readers
-	readersList = malloc(readersListLen);
-	if (NULL == readersList) {
-		printf("ERROR: failed to allocate memory for a list of readers.\n");
-		return rv;
-	}
+		// allocate buffer for the name list of available readers
+		rv = SCARD_E_NO_MEMORY;
+		readersList = malloc(readersListLen);
+		if (NULL == readersList) {
+			break;
+		}
 
-	rv = SCardListReaders(ctx, NULL, readersList, &readersListLen);
-	if (rv != SCARD_S_SUCCESS) {
-		printf("ERROR: failed to retrieve a list of readers. "
-				"Reason: %s\n", pcsc_stringify_error(rv));
-		return rv;
-	}
+		rv = SCardListReaders(ctx, NULL, readersList, &readersListLen);
+		if (rv != SCARD_S_SUCCESS) {
+			break;
+		}
+
+	} while (0);
 
 	print_available_readers();
 
 	return rv;
 }
+
 
 LONG
 sc_get_reader_status(void)
@@ -98,13 +87,7 @@ sc_get_reader_status(void)
 	DWORD atrLen = MAX_ATR_SIZE;
 
 	DWORD readerState = 0;
-	LONG rv = SCardStatus(
-		connHandle, friendlyName,
-		&friendlyNameLen, &readerState,
-		&connProtocol,
-		atr,
-		&atrLen
-	);
+	LONG rv = SCardStatus(connHandle, friendlyName, &friendlyNameLen, &readerState, &connProtocol, atr, &atrLen);
 
 	if (rv != SCARD_S_SUCCESS) {
 		printf("ERROR: failed to retrieve the reader's state. "
@@ -121,54 +104,47 @@ sc_get_reader_status(void)
 }
 
 LONG
-sc_apdu_transmit(BYTE* cmd, DWORD cmdLen)
+sc_apdu_transmit(const char* string, Apdu_t* apdu)
 {
-	BYTE recvBuff[255] = {0};
-	DWORD recvBuffLen = sizeof(recvBuff);
+	LONG rv;
 
-	printf("    >> ");
-	print_bytes(cmd, cmdLen);
-
-	LONG rv = SCardTransmit(connHandle, SCARD_PCI_T1, cmd, cmdLen, NULL, recvBuff, &recvBuffLen);
-	if (rv != SCARD_S_SUCCESS) {
-		printf("ERROR: failed to transmit data. "
-				"Reason: %s\nSize expected: %ld\n", pcsc_stringify_error(rv), recvBuffLen);
-		return rv;
+	if (stringify_hex(string, apdu->cmd, &apdu->cmdLen)) {
+		return 1;
 	}
-
-	printf("    << ");
-	print_bytes(recvBuff, recvBuffLen);
 	
+	printf("    >> ");
+	print_bytes(apdu->cmd, apdu->cmdLen);
+
+	do {
+		rv = SCardTransmit(connHandle, SCARD_PCI_T1, apdu->cmd, apdu->cmdLen, NULL, apdu->resp, &apdu->respLen);
+		if (rv != SCARD_S_SUCCESS)
+			break;
+		
+		printf("    << ");
+		print_bytes(apdu->resp, apdu->respLen);	
+	} while (0);
+
 	return rv;
 }
 
 LONG
 sc_card_connect(void)
 {
-	readersState[0].szReader = &readersList[0];
-	readersState[0].dwCurrentState = SCARD_STATE_EMPTY;
+	LONG rv;
 
-	// Blocks until either the card is inserted or 10 milliseconds elapsed.
-	LONG rv = SCardGetStatusChange(ctx, 10, readersState, 1);
-	if (rv != SCARD_S_SUCCESS) {
-		printf("ERROR: SCardGetStatusChange() call failed. "
-				"Reason: %s\n", pcsc_stringify_error(rv));
-		return rv;
-	}
-	
-	rv = SCardConnect(ctx, readersList, SCARD_SHARE_EXCLUSIVE,
-							SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1,
-							&connHandle, &connProtocol);
-
-	if (rv != SCARD_S_SUCCESS) {
-		printf("ERROR: failed to establish connection with the card reader. "
-				"Reason: %s\n", pcsc_stringify_error(rv));
-		return rv;
-	} else {
+	do {
+		// Blocks until either the card is inserted or 10 milliseconds elapsed.
+		rv = SCardGetStatusChange(ctx, INFINITE, readersState, 1);
+		if (rv != SCARD_S_SUCCESS)
+			break;
+		
+		rv = SCardConnect(ctx, readersList, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connHandle, &connProtocol);
+		if (rv != SCARD_S_SUCCESS)
+			break;
+		
 		const char* temp = connProtocol == SCARD_PROTOCOL_T0 ? "T=0" : "T=1";
-		printf("    Card inserted.\n    connProtocol: %s\n    connHandle: %08lX\n",
-			temp, connHandle);
-	}
+		printf("    Card inserted.\n    connProtocol: %s\n    connHandle: %08lX\n", temp, connHandle);
+	} while (0);
 
 	return rv;
 }
@@ -176,13 +152,9 @@ sc_card_connect(void)
 LONG
 sc_card_disconnect(void)
 {
-	LONG rv = SCARD_S_SUCCESS;
+	LONG rv = SCARD_E_INVALID_HANDLE;
 	if (connHandle) {
 		rv = SCardDisconnect(connHandle, SCARD_UNPOWER_CARD);
-		if (rv != SCARD_S_SUCCESS) {
-			printf("ERROR: failed to disconnect the card reader. "
-					"Reason: %s\n", pcsc_stringify_error(rv));
-		}
 	}
 
 	return rv;
@@ -192,7 +164,7 @@ sc_card_disconnect(void)
 // =================== UTILS =================== //
 
 uint8_t
-stringify_hex(const char* string, uint8_t outBuff[CAPDU_LENGTH], uint32_t* outLen)
+stringify_hex(const char* string, BYTE outBuff[CAPDU_LENGTH], PDWORD outLen)
 {
 	if(string == NULL) 
 		return 1;

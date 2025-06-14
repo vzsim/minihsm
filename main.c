@@ -20,33 +20,20 @@ main(int argc, char* argv[])
 		return 1;
 	}
 
-	rv = sc_get_reader_status();
-	if (rv) {
-		sc_card_disconnect();
-		sc_delete_ctx();
-		return 1;
-	}
-
-	if (stringify_hex("00a40400", apdu.cmd, &apdu.cmdLen)) {
-		printf("ERROR: something went wrong while hexifying SELECT ISD command.\n");
-		return 1;
-	} else {
-		print_bytes(apdu.cmd, apdu.cmdLen);
-	}
-
-	rv = sc_apdu_transmit(apdu.cmd, apdu.cmdLen);
-	if (rv) {
-		sc_card_disconnect();
+	if (sc_get_reader_status()) {
 		sc_delete_ctx();
 		return 1;
 	}
 	
-	if (stringify_hex("00a4040006a00000000101", apdu.cmd, &apdu.cmdLen)) {
-		printf("ERROR: something went wrong while hexifying SELECT ISD command.\n");
+
+	rv = sc_apdu_transmit("00a40400", &apdu);
+	if (rv) {
+		sc_card_disconnect();
+		sc_delete_ctx();
 		return 1;
 	}
 
-	rv = sc_apdu_transmit(apdu.cmd, apdu.cmdLen);
+	rv = sc_apdu_transmit("00a4040006a00000000101", &apdu);
 	if (rv) {
 		sc_card_disconnect();
 		sc_delete_ctx();

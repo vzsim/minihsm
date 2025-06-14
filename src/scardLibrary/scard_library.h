@@ -14,22 +14,22 @@
 #define RAPDU_LENGTH 258
 
 typedef struct {
-	uint8_t   cmd[CAPDU_LENGTH];
-	uint32_t  cmdLen;
-	uint8_t   resp[RAPDU_LENGTH];
-	uint32_t* respLen;
+	BYTE  cmd[CAPDU_LENGTH];
+	DWORD cmdLen;
+	BYTE  resp[RAPDU_LENGTH];
+	DWORD respLen;
 } Apdu_t;
 
 LONG sc_create_ctx(Apdu_t* apdu);
 void sc_delete_ctx(void);
 LONG sc_get_available_readers(void);
 LONG sc_get_reader_status(void);
-LONG sc_apdu_transmit(BYTE* cmd, DWORD cmdLen);
+LONG sc_apdu_transmit(const char* string, Apdu_t* apdu);
 LONG sc_card_connect(void);
 LONG sc_card_disconnect(void);
 
 // =================== UTILS =================== //
-uint8_t stringify_hex(const char* string, uint8_t outBuff[CAPDU_LENGTH], uint32_t* outLen);
+uint8_t stringify_hex(const char* string, BYTE outBuff[CAPDU_LENGTH], PDWORD outLen);
 void print_bytes(uint8_t* bytes, uint32_t bytesLen);
 
 #endif /* SCARD_LIBRARY_H */
