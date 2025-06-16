@@ -1,45 +1,31 @@
 #include "scard_library.h"
 
-static SCARDCONTEXT ctx = 0;
-static LPSTR readersList = NULL;
-static DWORD readersListLen = 0;
-static SCARDHANDLE connHandle = 0;
-static DWORD connProtocol = 0;
-static SCARD_READERSTATE readersState[1];
+ConnectionManager_t connMan;
 
-static void
-print_available_readers(void)
+void
+init_connection_manager(void)
 {
-	for (uint32_t i = 0; i < readersListLen - 1; ++i) {
-		printf("    Reader #%d: %s\n", (i + 1), &readersList[i]);
-		while (readersList[++i] != 0);
-	}
-}
-
-static void
-init_apdu(Apdu_t* apdu)
-{
-	memset(apdu, 0x00, sizeof(Apdu_t));
-	apdu->respLen = RAPDU_LENGTH;
+	memset(&connMan, 0x00, sizeof(Apdu_t));
+	connMan.apdu.respLen = RAPDU_LENGTH;
+	connMan.ifdNameLen = MAX_READERNAME;
+	connMan.ifdState.cbAtr = MAX_ATR_SIZE;
+	connMan.ifdState.dwCurrentState = SCARD_STATE_EMPTY;
 }
 
 LONG
-sc_create_ctx(Apdu_t* apdu)
+sc_create_ctx(void)
 {
-	init_apdu(apdu);
-	memset(readersState, 0x00, sizeof(SCARD_READERSTATE));
-
-	return SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &ctx);
+	return SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &connMan.ctx);
 }
 
 void
 sc_delete_ctx(void)
 {
-	if (ctx)
-		SCardReleaseContext(ctx);
+	if (connMan.ctx)
+		SCardReleaseContext(connMan.ctx);
 
-	if (readersList != NULL)
-		free(readersList);
+	if (connMan.ifdList != NULL)
+		free(connMan.ifdList);
 }
 
 LONG
@@ -47,72 +33,20 @@ sc_get_available_readers(void)
 {
 	LONG rv = SCARD_S_SUCCESS;
 	do {
-		// Get the length of the buffer required for the name list of available readers
-		rv = SCardListReaders(ctx, NULL, NULL, &readersListLen);
+		// Calculating a length required for a buffer to be allocated to hold the list of names of available readers
+		rv = SCardListReaders(connMan.ctx, NULL, NULL, &connMan.ifdListLen);
 		if (rv != SCARD_S_SUCCESS) {
 			break;
 		}
 
-		// allocate buffer for the name list of available readers
+		// allocate the buffer.
 		rv = SCARD_E_NO_MEMORY;
-		readersList = malloc(readersListLen);
-		if (NULL == readersList) {
+		connMan.ifdList = malloc(connMan.ifdListLen);
+		if (NULL == connMan.ifdList) {
 			break;
 		}
 
-		rv = SCardListReaders(ctx, NULL, readersList, &readersListLen);
-	} while (0);
-
-	print_available_readers();
-
-	return rv;
-}
-
-#if(0)
-LONG
-sc_get_reader_status(void)
-{
-	char  friendlyName[MAX_READERNAME] = {0};
-	DWORD friendlyNameLen = MAX_READERNAME;
-
-	BYTE  atr[MAX_ATR_SIZE] = {0};
-	DWORD atrLen = MAX_ATR_SIZE;
-
-	DWORD readerState = 0;
-	LONG rv = SCardStatus(connHandle, friendlyName, &friendlyNameLen, &readerState, &connProtocol, atr, &atrLen);
-
-	if (rv != SCARD_S_SUCCESS) {
-		printf("ERROR: failed to retrieve the reader's state. "
-				"Reason: %s\n", pcsc_stringify_error(rv));
-		return rv;
-	}
-
-	printf("    Reader name: %s\n", friendlyName);
-	printf("    ATR: ");
-	print_bytes(atr, atrLen);
-
-	return rv;
-
-}
-#endif
-
-LONG
-sc_apdu_transmit(const char* string, Apdu_t* apdu)
-{
-	LONG rv = SCARD_E_INVALID_VALUE;
-
-	do {
-		if (stringify_hex(string, apdu->cmd, &apdu->cmdLen))
-			break;
-		
-		printf("    >> %s\n", string);
-		
-		rv = SCardTransmit(connHandle, SCARD_PCI_T1, apdu->cmd, apdu->cmdLen, NULL, apdu->resp, &apdu->respLen);
-		if (rv != SCARD_S_SUCCESS)
-			break;
-		
-		printf("    << ");
-		print_bytes(apdu->resp, apdu->respLen);	
+		rv = SCardListReaders(connMan.ctx, NULL, connMan.ifdList, &connMan.ifdListLen);
 	} while (0);
 
 	return rv;
@@ -122,16 +56,15 @@ LONG
 sc_card_connect(void)
 {
 	LONG rv;
-	readersState[0].szReader = &readersList[0];
-	readersState[0].dwCurrentState = SCARD_STATE_EMPTY;
+	connMan.ifdState.szReader = &connMan.ifdList[0];
 
 	do {
-		// Blocks until either the card is inserted or 10 milliseconds elapsed.
-		rv = SCardGetStatusChange(ctx, 10, readersState, 1);
+		// Wait 10 milliseconds for card insertion event.
+		rv = SCardGetStatusChange(connMan.ctx, 10, &connMan.ifdState, 1);
 		if (rv != SCARD_S_SUCCESS)
 			break;
-		
-		rv = SCardConnect(ctx, readersList, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connHandle, &connProtocol);
+
+		rv = SCardConnect(connMan.ctx, connMan.ifdList, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connMan.connHdlr, &connMan.connPtcl);
 	} while (0);
 
 	return rv;
@@ -140,14 +73,40 @@ sc_card_connect(void)
 LONG
 sc_card_disconnect(void)
 {
-	LONG rv = SCARD_E_INVALID_HANDLE;
-	if (connHandle) {
-		rv = SCardDisconnect(connHandle, SCARD_UNPOWER_CARD);
+	LONG rv = SCARD_S_SUCCESS;
+
+	if (connMan.connHdlr) {
+		rv = SCardDisconnect(connMan.connHdlr, SCARD_UNPOWER_CARD);
 	}
 
 	return rv;
 }
 
+LONG
+sc_get_reader_status(void)
+{
+	DWORD readerState = 0;
+
+	return SCardStatus(connMan.connHdlr, connMan.ifdName, &connMan.ifdNameLen, &readerState, &connMan.connPtcl, connMan.ifdState.rgbAtr, &connMan.ifdState.cbAtr);
+}
+
+LONG
+sc_apdu_transmit(void)
+{
+	LONG rv = SCARD_E_INVALID_PARAMETER;
+	SCARD_IO_REQUEST* protocolType = NULL;
+	connMan.apdu.respLen = RAPDU_LENGTH;
+
+	do {
+		if (connMan.apdu.cmdLen > CAPDU_LENGTH)
+			break;
+		
+		protocolType = (connMan.connPtcl == SCARD_PROTOCOL_T0) ? SCARD_PCI_T0 : SCARD_PCI_T1;
+		rv = SCardTransmit(connMan.connHdlr, protocolType, connMan.apdu.cmd, connMan.apdu.cmdLen, NULL, connMan.apdu.resp, &connMan.apdu.respLen);
+	} while (0);
+
+	return rv;
+}
 
 // =================== UTILS =================== //
 

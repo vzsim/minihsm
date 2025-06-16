@@ -1,4 +1,5 @@
 #include "pkcs11-cryptolib.h"
+#include "scard_library.h"
 
 CK_BBOOL pkcs11_initialized = CK_FALSE;
 CK_BBOOL pkcs11_session_opened = CK_FALSE;
@@ -26,20 +27,25 @@ CK_FUNCTION_LIST pkcs11_240_funcs =
 	&C_SetOperationState,
 	&C_Login,
 	&C_Logout,
-
 	&C_WaitForSlotEvent
 };
 
 CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 {
+	CK_RV rv = CKR_OK;
 	if (CK_TRUE == pkcs11_initialized)
 		return CKR_CRYPTOKI_ALREADY_INITIALIZED;
 
 	IGNORE(pInitArgs);
 
-	pkcs11_initialized = CK_TRUE;
+	if (sc_create_ctx() == SCARD_S_SUCCESS) {
+		pkcs11_initialized = CK_TRUE;
+	} else {
+		rv = CKR_FUNCTION_FAILED;
+		pkcs11_initialized = CK_FALSE;
+	}
 
-	return CKR_OK;
+	return rv;
 }
 
 
@@ -49,7 +55,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
 	IGNORE(pReserved);
-
+	
+	sc_delete_ctx();
 	pkcs11_initialized = CK_FALSE;
 
 	return CKR_OK;
@@ -64,15 +71,15 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetInfo)(CK_INFO_PTR pInfo)
 	if (NULL == pInfo)
 		return CKR_ARGUMENTS_BAD;
 
-	pInfo->cryptokiVersion.major = 0x00;
-	pInfo->cryptokiVersion.minor = 0x01;
+	pInfo->cryptokiVersion.major = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MAJOR;
+	pInfo->cryptokiVersion.minor = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MINOR;
 	memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
 	memcpy(pInfo->manufacturerID, PKCS11_CRYPTOLIB_CK_INFO_MANUFACTURER_ID, strlen(PKCS11_CRYPTOLIB_CK_INFO_MANUFACTURER_ID));
 	pInfo->flags = 0;
 	memset(pInfo->libraryDescription, ' ', sizeof(pInfo->libraryDescription));
 	memcpy(pInfo->libraryDescription, PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_DESCRIPTION, strlen(PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_DESCRIPTION));
-	pInfo->libraryVersion.major = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MAJOR;
-	pInfo->libraryVersion.minor = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MINOR;
+	pInfo->libraryVersion.major = 0x00;
+	pInfo->libraryVersion.minor = 0x01;
 
 	return CKR_OK;
 }
@@ -107,7 +114,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotList)(CK_BBOOL tokenPresent, CK_SLOT_ID_PTR p
 		if (0 == *pulCount)
 			return CKR_BUFFER_TOO_SMALL;
 
-		pSlotList[0] = PKCS11_CRYPTOLIB_CK_SLOT_ID;
+		pSlotList[0] = (CK_SLOT_ID)connMan.ctx; //PKCS11_CRYPTOLIB_CK_SLOT_ID;
 		*pulCount = 1;
 	}
 
@@ -120,7 +127,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if (PKCS11_CRYPTOLIB_CK_SLOT_ID != slotID)
+	if ((CK_SLOT_ID)connMan.ctx != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (NULL == pInfo)
@@ -130,7 +137,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 	memcpy(pInfo->slotDescription, PKCS11_CRYPTOLIB_CK_SLOT_INFO_SLOT_DESCRIPTION, strlen(PKCS11_CRYPTOLIB_CK_SLOT_INFO_SLOT_DESCRIPTION));
 	memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
 	memcpy(pInfo->manufacturerID, PKCS11_CRYPTOLIB_CK_SLOT_INFO_MANUFACTURER_ID, strlen(PKCS11_CRYPTOLIB_CK_SLOT_INFO_MANUFACTURER_ID));
-	pInfo->flags = CKF_TOKEN_PRESENT;
+	pInfo->flags = CKF_REMOVABLE_DEVICE | CKF_TOKEN_PRESENT;
 	pInfo->hardwareVersion.major = 0x01;
 	pInfo->hardwareVersion.minor = 0x00;
 	pInfo->firmwareVersion.major = 0x01;
@@ -145,7 +152,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if (PKCS11_CRYPTOLIB_CK_SLOT_ID != slotID)
+	if ((CK_SLOT_ID)connMan.ctx != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (NULL == pInfo)
@@ -159,13 +166,16 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 	memcpy(pInfo->model, PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MODEL, strlen(PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MODEL));
 	memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
 	memcpy(pInfo->serialNumber, PKCS11_CRYPTOLIB_CK_TOKEN_INFO_SERIAL_NUMBER, strlen(PKCS11_CRYPTOLIB_CK_TOKEN_INFO_SERIAL_NUMBER));
+	
 	pInfo->flags = CKF_RNG | CKF_LOGIN_REQUIRED | CKF_USER_PIN_INITIALIZED | CKF_TOKEN_INITIALIZED;
+	
 	pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
 	pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
 	pInfo->ulMaxRwSessionCount = CK_EFFECTIVELY_INFINITE;
 	pInfo->ulRwSessionCount = ((CK_TRUE == pkcs11_session_opened) && ((CKS_RO_PUBLIC_SESSION != pkcs11_session_state) && (CKS_RO_USER_FUNCTIONS != pkcs11_session_state))) ? 1 : 0;
 	pInfo->ulMaxPinLen = PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MAX_PIN_LEN;
 	pInfo->ulMinPinLen = PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MIN_PIN_LEN;
+	
 	pInfo->ulTotalPublicMemory = CK_UNAVAILABLE_INFORMATION;
 	pInfo->ulFreePublicMemory = CK_UNAVAILABLE_INFORMATION;
 	pInfo->ulTotalPrivateMemory = CK_UNAVAILABLE_INFORMATION;
@@ -180,124 +190,12 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 }
 
 
-CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismList)(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMechanismList, CK_ULONG_PTR pulCount)
-{
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
-
-	if (PKCS11_CRYPTOLIB_CK_SLOT_ID != slotID)
-		return CKR_SLOT_ID_INVALID;
-
-	if (NULL == pulCount)
-		return CKR_ARGUMENTS_BAD;
-
-	if (NULL == pMechanismList)
-	{
-		*pulCount = 9;
-	}
-	else
-	{
-		if (9 > *pulCount)
-			return CKR_BUFFER_TOO_SMALL;
-
-		pMechanismList[0] = CKM_RSA_PKCS_KEY_PAIR_GEN;
-		pMechanismList[1] = CKM_RSA_PKCS;
-		pMechanismList[2] = CKM_SHA1_RSA_PKCS;
-		pMechanismList[3] = CKM_RSA_PKCS_OAEP;
-		pMechanismList[4] = CKM_DES3_CBC;
-		pMechanismList[5] = CKM_DES3_KEY_GEN;
-		pMechanismList[6] = CKM_SHA_1;
-		pMechanismList[7] = CKM_XOR_BASE_AND_DATA;
-		pMechanismList[8] = CKM_AES_CBC;
-
-		*pulCount = 9;
-	}
-
-	return CKR_OK;
-}
-
-
-CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR pInfo)
-{
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
-
-	if (PKCS11_CRYPTOLIB_CK_SLOT_ID != slotID)
-		return CKR_SLOT_ID_INVALID;
-
-	if (NULL == pInfo)
-		return CKR_ARGUMENTS_BAD;
-
-	switch (type)
-	{
-		case CKM_RSA_PKCS_KEY_PAIR_GEN:
-			pInfo->ulMinKeySize = 1024;
-			pInfo->ulMaxKeySize = 1024;
-			pInfo->flags = CKF_GENERATE_KEY_PAIR;
-			break;
-
-		case CKM_RSA_PKCS:
-			pInfo->ulMinKeySize = 1024;
-			pInfo->ulMaxKeySize = 1024;
-			pInfo->flags = CKF_ENCRYPT | CKF_DECRYPT | CKF_SIGN | CKF_SIGN_RECOVER | CKF_VERIFY | CKF_VERIFY_RECOVER | CKF_WRAP | CKF_UNWRAP;
-			break;
-
-		case CKM_SHA1_RSA_PKCS:
-			pInfo->ulMinKeySize = 1024;
-			pInfo->ulMaxKeySize = 1024;
-			pInfo->flags = CKF_SIGN | CKF_VERIFY;
-			break;
-
-		case CKM_RSA_PKCS_OAEP:
-			pInfo->ulMinKeySize = 1024;
-			pInfo->ulMaxKeySize = 1024;
-			pInfo->flags = CKF_ENCRYPT | CKF_DECRYPT;
-			break;
-
-		case CKM_DES3_CBC:
-			pInfo->ulMinKeySize = 192;
-			pInfo->ulMaxKeySize = 192;
-			pInfo->flags = CKF_ENCRYPT | CKF_DECRYPT;
-			break;
-
-		case CKM_DES3_KEY_GEN:
-			pInfo->ulMinKeySize = 192;
-			pInfo->ulMaxKeySize = 192;
-			pInfo->flags = CKF_GENERATE;
-			break;
-
-		case CKM_SHA_1:
-			pInfo->ulMinKeySize = 0;
-			pInfo->ulMaxKeySize = 0;
-			pInfo->flags = CKF_DIGEST;
-			break;
-
-		case CKM_XOR_BASE_AND_DATA:
-			pInfo->ulMinKeySize = 128;
-			pInfo->ulMaxKeySize = 256;
-			pInfo->flags = CKF_DERIVE;
-			break;
-
-		case CKM_AES_CBC:
-			pInfo->ulMinKeySize = 128;
-			pInfo->ulMaxKeySize = 256;
-			pInfo->flags = CKF_ENCRYPT | CKF_DECRYPT;
-			break;
-
-		default:
-			return CKR_MECHANISM_INVALID;
-	}
-
-	return CKR_OK;
-}
-
-
 CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen, CK_UTF8CHAR_PTR pLabel)
 {
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if (PKCS11_CRYPTOLIB_CK_SLOT_ID != slotID)
+	if ((CK_SLOT_ID)connMan.ctx != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (NULL == pPin)
@@ -372,7 +270,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_OpenSession)(CK_SLOT_ID slotID, CK_FLAGS flags, CK_V
 	if (CK_TRUE == pkcs11_session_opened)
 		return CKR_SESSION_COUNT;
 
-	if (PKCS11_CRYPTOLIB_CK_SLOT_ID != slotID)
+	if ((CK_SLOT_ID)connMan.ctx != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (!(flags & CKF_SERIAL_SESSION))
@@ -414,7 +312,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_CloseAllSessions)(CK_SLOT_ID slotID)
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if (PKCS11_CRYPTOLIB_CK_SLOT_ID != slotID)
+	if ((CK_SLOT_ID)connMan.ctx != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	pkcs11_session_opened = CK_FALSE;
@@ -436,7 +334,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSessionInfo)(CK_SESSION_HANDLE hSession, CK_SESSI
 	if (NULL == pInfo)
 		return CKR_ARGUMENTS_BAD;
 
-	pInfo->slotID = PKCS11_CRYPTOLIB_CK_SLOT_ID;
+	pInfo->slotID = (CK_SLOT_ID)connMan.ctx;
 	pInfo->state = pkcs11_session_state;
 	pInfo->flags = CKF_SERIAL_SESSION;
 	if ((pkcs11_session_state != CKS_RO_PUBLIC_SESSION) && (pkcs11_session_state != CKS_RO_USER_FUNCTIONS))
