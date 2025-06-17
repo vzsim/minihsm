@@ -3,7 +3,7 @@
 ConnectionManager_t connMan;
 
 void
-init_connection_manager(void)
+reset_conn_manager(void)
 {
 	memset(&connMan, 0x00, sizeof(Apdu_t));
 	connMan.apdu.respLen = RAPDU_LENGTH;

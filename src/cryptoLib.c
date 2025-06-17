@@ -5,6 +5,8 @@ CK_BBOOL pkcs11_initialized = CK_FALSE;
 CK_BBOOL pkcs11_session_opened = CK_FALSE;
 CK_ULONG pkcs11_session_state = CKS_RO_PUBLIC_SESSION;
 PKCS11_CRYPTOLIB_CK_OPERATION pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
+static CK_ULONG ulPinLenMin = 0;
+static CK_ULONG ulPinLenMax = 0;
 
 CK_FUNCTION_LIST pkcs11_240_funcs =
 {
@@ -32,19 +34,29 @@ CK_FUNCTION_LIST pkcs11_240_funcs =
 
 CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 {
-	CK_RV rv = CKR_OK;
+	CK_RV rv;
+	IGNORE(pInitArgs);
+
 	if (CK_TRUE == pkcs11_initialized)
 		return CKR_CRYPTOKI_ALREADY_INITIALIZED;
 
-	IGNORE(pInitArgs);
-
-	if (sc_create_ctx() == SCARD_S_SUCCESS) {
-		pkcs11_initialized = CK_TRUE;
-	} else {
-		rv = CKR_FUNCTION_FAILED;
+	do {
 		pkcs11_initialized = CK_FALSE;
-	}
+		rv = CKR_FUNCTION_FAILED;
+		reset_conn_manager();
 
+		if (sc_create_ctx() != SCARD_S_SUCCESS)
+			break;
+		
+		pkcs11_initialized = CK_TRUE;
+		if (sc_get_available_readers() != SCARD_S_SUCCESS)
+			break;
+		
+		if (sc_card_connect() != SCARD_S_SUCCESS)
+			break;
+
+		rv = CKR_OK;
+	} while (0);
 	return rv;
 }
 
@@ -56,6 +68,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 
 	IGNORE(pReserved);
 	
+	sc_card_disconnect();
 	sc_delete_ctx();
 	pkcs11_initialized = CK_FALSE;
 
@@ -149,42 +162,86 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 {
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	CK_RV rv;
+	LONG sc_rv;
+	do {
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
+		
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if ((CK_SLOT_ID)connMan.ctx != slotID)
+			break;
+		
+		rv = CKR_ARGUMENTS_BAD;
+		if (NULL == pInfo)
+			break;
 
-	if ((CK_SLOT_ID)connMan.ctx != slotID)
-		return CKR_SLOT_ID_INVALID;
+		BYTE GET_DATA[] = {0x00, 0xCA, 0x00, 0xFF};
+		memcpy(connMan.apdu.cmd, GET_DATA, sizeof(GET_DATA));
+		sc_rv = sc_apdu_transmit();
 
-	if (NULL == pInfo)
-		return CKR_ARGUMENTS_BAD;
+		if (sc_rv != SCARD_S_SUCCESS) {
+			rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+			break;
+		}
+		LONG offset = 5;
+		LONG len = 0;
+		BYTE flags = connMan.apdu.resp[offset++];
 
-	memset(pInfo->label, ' ', sizeof(pInfo->label));
-	memcpy(pInfo->label, PKCS11_CRYPTOLIB_CK_TOKEN_INFO_LABEL, strlen(PKCS11_CRYPTOLIB_CK_TOKEN_INFO_LABEL));
-	memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
-	memcpy(pInfo->manufacturerID, PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MANUFACTURER_ID, strlen(PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MANUFACTURER_ID));
-	memset(pInfo->model, ' ', sizeof(pInfo->model));
-	memcpy(pInfo->model, PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MODEL, strlen(PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MODEL));
-	memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
-	memcpy(pInfo->serialNumber, PKCS11_CRYPTOLIB_CK_TOKEN_INFO_SERIAL_NUMBER, strlen(PKCS11_CRYPTOLIB_CK_TOKEN_INFO_SERIAL_NUMBER));
-	
-	pInfo->flags = CKF_RNG | CKF_LOGIN_REQUIRED | CKF_USER_PIN_INITIALIZED | CKF_TOKEN_INITIALIZED;
-	
-	pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
-	pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
-	pInfo->ulMaxRwSessionCount = CK_EFFECTIVELY_INFINITE;
-	pInfo->ulRwSessionCount = ((CK_TRUE == pkcs11_session_opened) && ((CKS_RO_PUBLIC_SESSION != pkcs11_session_state) && (CKS_RO_USER_FUNCTIONS != pkcs11_session_state))) ? 1 : 0;
-	pInfo->ulMaxPinLen = PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MAX_PIN_LEN;
-	pInfo->ulMinPinLen = PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MIN_PIN_LEN;
-	
-	pInfo->ulTotalPublicMemory = CK_UNAVAILABLE_INFORMATION;
-	pInfo->ulFreePublicMemory = CK_UNAVAILABLE_INFORMATION;
-	pInfo->ulTotalPrivateMemory = CK_UNAVAILABLE_INFORMATION;
-	pInfo->ulFreePrivateMemory = CK_UNAVAILABLE_INFORMATION;
-	pInfo->hardwareVersion.major = 0x01;
-	pInfo->hardwareVersion.minor = 0x00;
-	pInfo->firmwareVersion.major = 0x01;
-	pInfo->firmwareVersion.minor = 0x00;
-	memset(pInfo->utcTime, ' ', sizeof(pInfo->utcTime));
+		switch (flags) {
+			case 0x01: // LCS CREATION
+				pInfo->flags = CKF_USER_PIN_TO_BE_CHANGED | CKF_SO_PIN_TO_BE_CHANGED;
+			break;
+			case 0x03: // LCS INITIALIZATION
+				pInfo->flags = CKF_SO_PUK_INITIALIZED;
+			break;
+			case 0x04: // LCS DEACTIVATE
+				pInfo->flags = CKF_USER_PIN_LOCKED;
+			break;
+			case 0x05: // LCS ACTIVATE
+				pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
+			break;
+			case 0x0C: // LCS TERMINATED
+		}
+
+		pInfo->hardwareVersion.major = 0x01;
+		pInfo->hardwareVersion.minor = 0x00;
+
+		pInfo->firmwareVersion.major = connMan.apdu.resp[offset++];
+		pInfo->firmwareVersion.minor = connMan.apdu.resp[offset++];
+
+		pInfo->ulMaxPinLen = ulPinLenMax = connMan.apdu.resp[offset++];
+		pInfo->ulMinPinLen = ulPinLenMin = connMan.apdu.resp[offset++];
+		
+		len = connMan.apdu.resp[offset++];
+		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
+		memcpy(pInfo->manufacturerID, &connMan.apdu.resp[offset], len);
+
+		len = connMan.apdu.resp[offset + len];
+		memset(pInfo->label, ' ', sizeof(pInfo->label));
+		memcpy(pInfo->label, &connMan.apdu.resp[offset], len);
+
+		len = connMan.apdu.resp[offset + len];
+		memset(pInfo->model, ' ', sizeof(pInfo->model));
+		memcpy(pInfo->model, &connMan.apdu.resp[offset], len);
+
+		len = connMan.apdu.resp[offset + len];
+		memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
+		memcpy(pInfo->serialNumber, &connMan.apdu.resp[offset], len);
+		pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
+		pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
+		pInfo->ulMaxRwSessionCount = CK_EFFECTIVELY_INFINITE;
+		pInfo->ulRwSessionCount = ((CK_TRUE == pkcs11_session_opened) && ((CKS_RO_PUBLIC_SESSION != pkcs11_session_state) && (CKS_RO_USER_FUNCTIONS != pkcs11_session_state))) ? 1 : 0;
+		
+		
+		pInfo->ulTotalPublicMemory = CK_UNAVAILABLE_INFORMATION;
+		pInfo->ulFreePublicMemory = CK_UNAVAILABLE_INFORMATION;
+		pInfo->ulTotalPrivateMemory = CK_UNAVAILABLE_INFORMATION;
+		pInfo->ulFreePrivateMemory = CK_UNAVAILABLE_INFORMATION;
+		
+		memset(pInfo->utcTime, ' ', sizeof(pInfo->utcTime));
+	} while(0);
 
 	return CKR_OK;
 }
@@ -201,7 +258,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 	if (NULL == pPin)
 		return CKR_ARGUMENTS_BAD;
 
-	if ((ulPinLen < PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MIN_PIN_LEN) || (ulPinLen > PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MAX_PIN_LEN))
+	if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
 		return CKR_PIN_LEN_RANGE;
 
 	if (NULL == pLabel)
@@ -228,7 +285,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR
 	if (NULL == pPin)
 		return CKR_ARGUMENTS_BAD;
 
-	if ((ulPinLen < PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MIN_PIN_LEN) || (ulPinLen > PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MAX_PIN_LEN))
+	if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
 		return CKR_PIN_LEN_RANGE;
 
 	return CKR_OK;
@@ -249,13 +306,13 @@ CK_DEFINE_FUNCTION(CK_RV, C_SetPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR 
 	if (NULL == pOldPin)
 		return CKR_ARGUMENTS_BAD;
 
-	if ((ulOldLen < PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MIN_PIN_LEN) || (ulOldLen > PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MAX_PIN_LEN))
+	if ((ulOldLen < ulPinLenMin) || (ulOldLen > ulPinLenMax))
 		return CKR_PIN_LEN_RANGE;
 
 	if (NULL == pNewPin)
 		return CKR_ARGUMENTS_BAD;
 
-	if ((ulNewLen < PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MIN_PIN_LEN) || (ulNewLen > PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MAX_PIN_LEN))
+	if ((ulNewLen < ulPinLenMin) || (ulNewLen > ulPinLenMax))
 		return CKR_PIN_LEN_RANGE;
 
 	return CKR_OK;
@@ -411,7 +468,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Login)(CK_SESSION_HANDLE hSession, CK_USER_TYPE user
 	if (NULL == pPin)
 		return CKR_ARGUMENTS_BAD;
 
-	if ((ulPinLen < PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MIN_PIN_LEN) || (ulPinLen > PKCS11_CRYPTOLIB_CK_TOKEN_INFO_MAX_PIN_LEN))
+	if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
 		return CKR_PIN_LEN_RANGE;
 
 	switch (pkcs11_session_state)
