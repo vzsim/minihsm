@@ -34,7 +34,7 @@ typedef struct {
 
 extern ConnectionManager_t connMan;
 
-void reset_conn_manager(void);
+void sc_reset_conn_manager(void);
 LONG sc_create_ctx(void);
 void sc_delete_ctx(void);
 LONG sc_get_available_readers(void);

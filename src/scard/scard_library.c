@@ -3,7 +3,7 @@
 ConnectionManager_t connMan;
 
 void
-reset_conn_manager(void)
+sc_reset_conn_manager(void)
 {
 	memset(&connMan, 0x00, sizeof(Apdu_t));
 	connMan.apdu.respLen = RAPDU_LENGTH;
@@ -94,7 +94,7 @@ LONG
 sc_apdu_transmit(void)
 {
 	LONG rv = SCARD_E_INVALID_PARAMETER;
-	SCARD_IO_REQUEST* protocolType = NULL;
+	const SCARD_IO_REQUEST* protocolType = NULL;
 	connMan.apdu.respLen = RAPDU_LENGTH;
 
 	do {
