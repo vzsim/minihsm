@@ -88,26 +88,26 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 	CK_RV rv;
 	IGNORE(pInitArgs);
 
-	if (CK_TRUE == pkcs11_initialized)
-		return CKR_CRYPTOKI_ALREADY_INITIALIZED;
-
 	do {
-		pkcs11_initialized = CK_FALSE;
+		rv = CKR_CRYPTOKI_ALREADY_INITIALIZED;
+		if (pkcs11_initialized == CK_TRUE)
+			break;
+		
 		rv = CKR_FUNCTION_FAILED;
 		sc_reset_conn_manager();
-
 		if (sc_create_ctx() != SCARD_S_SUCCESS)
 			break;
 		
-		pkcs11_initialized = CK_TRUE;
 		if (sc_get_available_readers() != SCARD_S_SUCCESS)
 			break;
-		
+			
 		if (sc_card_connect() != SCARD_S_SUCCESS)
 			break;
-
+			
+		pkcs11_initialized = CK_TRUE;
 		rv = CKR_OK;
 	} while (0);
+	
 	return rv;
 }
 
