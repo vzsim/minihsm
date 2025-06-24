@@ -10,6 +10,8 @@ target_include_directories(${ENTRY_POINT}
 	PUBLIC /usr/include/PCSC
 )
 
-target_link_libraries(${ENTRY_POINT}
-	pcsclite
-)
+if(CMAKE_HOST_APPLE)
+	target_link_libraries(${ENTRY_POINT} libpcsclite)
+else()
+	target_link_libraries(${ENTRY_POINT} pcsclite)
+endif()

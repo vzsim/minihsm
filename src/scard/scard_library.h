@@ -1,9 +1,16 @@
 #ifndef SCARD_LIBRARY_H
 #define SCARD_LIBRARY_H
 
-#include <pcsclite.h>
-#include <winscard.h>
-#include <wintypes.h>
+#ifdef __APPLE__
+#	include <PCSC/pcsclite.h>
+#	include <PCSC/winscard.h>
+#	include <PCSC/wintypes.h>
+#else
+#	include <pcsclite.h>
+#	include <winscard.h>
+#	include <wintypes.h>
+#endif
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
