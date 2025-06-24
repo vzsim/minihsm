@@ -96,6 +96,7 @@ sc_apdu_transmit(void)
 	LONG rv = SCARD_E_INVALID_PARAMETER;
 	const SCARD_IO_REQUEST* protocolType = NULL;
 	connMan.apdu.respLen = RAPDU_LENGTH;
+	memset(connMan.apdu.resp, 0x00, RAPDU_LENGTH);
 
 	do {
 		if (connMan.apdu.cmdLen > CAPDU_LENGTH)
