@@ -217,6 +217,13 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 	return CKR_OK;
 }
 
+static LONG
+transmit(BYTE* cmd, ULONG cmdLen)
+{
+	memcpy(connMan.apdu.cmd, cmd, cmdLen);
+	connMan.apdu.cmdLen = cmdLen;
+	return sc_apdu_transmit();
+}
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 {
@@ -236,33 +243,30 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 			break;
 
 		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
-		memcpy(connMan.apdu.cmd, SELECT, sizeof(SELECT));
-		connMan.apdu.cmdLen = sizeof(SELECT);
-		sc_rv = sc_apdu_transmit();
+		sc_rv = transmit(SELECT, sizeof(SELECT));
 
 		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
 		if (sc_rv != SCARD_S_SUCCESS)
 			break;
-		
+
 		BYTE GET_DATA[] = {0x00, 0xCA, 0x00, 0xFF};
-		memcpy(connMan.apdu.cmd, GET_DATA, sizeof(GET_DATA));
-		connMan.apdu.cmdLen = sizeof(GET_DATA);
-		sc_rv = sc_apdu_transmit();
-
+		sc_rv = transmit(GET_DATA, sizeof(GET_DATA));
+		
 		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
 		if (sc_rv != SCARD_S_SUCCESS)
 			break;
 
-		LONG offset = 5;
+		LONG offset = 0;
 		LONG len = 0;
-		// BYTE flags = connMan.apdu.resp[offset++];
+		BYTE flags = connMan.apdu.resp[offset++];
 
+		IGNORE(flags);
 		// switch (flags) {
 		// 	case 0x01: // LCS CREATION
 		// 		pInfo->flags = CKF_USER_PIN_TO_BE_CHANGED | CKF_SO_PIN_TO_BE_CHANGED;
 		// 	break;
 		// 	case 0x03: // LCS INITIALIZATION
-		// 		pInfo->flags = CKF_SO_PUK_INITIALIZED;
+		// 		pInfo->flags = CKF_SO_PUK_INITIALIZED; //https://meet.google.com/xeg-yegi-oir
 		// 	break;
 		// 	case 0x04: // LCS DEACTIVATE
 		// 		pInfo->flags = CKF_USER_PIN_LOCKED;
@@ -273,31 +277,38 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		// 	case 0x0C: // LCS TERMINATED
 		// }
 
-		pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
+		pInfo->flags = (CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED);
 		pInfo->hardwareVersion.major = 0x01;
 		pInfo->hardwareVersion.minor = 0x00;
 
 		pInfo->firmwareVersion.major = connMan.apdu.resp[offset++];
 		pInfo->firmwareVersion.minor = connMan.apdu.resp[offset++];
 
-		pInfo->ulMaxPinLen = ulPinLenMax = connMan.apdu.resp[offset++];
-		pInfo->ulMinPinLen = ulPinLenMin = connMan.apdu.resp[offset++];
+		ulPinLenMin = connMan.apdu.resp[offset++];
+		ulPinLenMax = connMan.apdu.resp[offset++];
+
+		pInfo->ulMinPinLen = ulPinLenMin;
+		pInfo->ulMaxPinLen = ulPinLenMax;
 		
 		len = connMan.apdu.resp[offset++];
 		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
 		memcpy(pInfo->manufacturerID, &connMan.apdu.resp[offset], len);
 
-		len = connMan.apdu.resp[offset + len];
+		offset += len;
+		len = connMan.apdu.resp[offset++];
 		memset(pInfo->label, ' ', sizeof(pInfo->label));
 		memcpy(pInfo->label, &connMan.apdu.resp[offset], len);
 
-		len = connMan.apdu.resp[offset + len];
+		offset += len;
+		len = connMan.apdu.resp[offset++];
 		memset(pInfo->model, ' ', sizeof(pInfo->model));
 		memcpy(pInfo->model, &connMan.apdu.resp[offset], len);
 
-		len = connMan.apdu.resp[offset + len];
+		offset += len;
+		len = connMan.apdu.resp[offset++];
 		memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
 		memcpy(pInfo->serialNumber, &connMan.apdu.resp[offset], len);
+
 		pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
 		pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
 		pInfo->ulMaxRwSessionCount = CK_EFFECTIVELY_INFINITE;
