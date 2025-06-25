@@ -11,7 +11,9 @@ target_include_directories(${ENTRY_POINT}
 )
 
 if(CMAKE_HOST_APPLE)
-	target_link_libraries(${ENTRY_POINT} libpcsclite)
+	#target_link_libraries(${ENTRY_POINT} libpcsclite)
+	find_library(PCSC_FRAMEWORK PCSC)
+    target_link_libraries(${ENTRY_POINT} ${PCSC_FRAMEWORK})
 else()
 	target_link_libraries(${ENTRY_POINT} pcsclite)
 endif()
