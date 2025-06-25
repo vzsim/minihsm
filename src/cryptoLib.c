@@ -122,30 +122,37 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 	sc_card_disconnect();
 	sc_delete_ctx();
 	pkcs11_initialized = CK_FALSE;
-
+	
 	return CKR_OK;
 }
 
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetInfo)(CK_INFO_PTR pInfo)
 {
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	CK_RV rv;
 
-	if (NULL == pInfo)
-		return CKR_ARGUMENTS_BAD;
-
-	pInfo->cryptokiVersion.major = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MAJOR;
-	pInfo->cryptokiVersion.minor = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MINOR;
-	memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
-	memcpy(pInfo->manufacturerID, PKCS11_CRYPTOLIB_CK_INFO_MANUFACTURER_ID, strlen(PKCS11_CRYPTOLIB_CK_INFO_MANUFACTURER_ID));
-	pInfo->flags = 0;
-	memset(pInfo->libraryDescription, ' ', sizeof(pInfo->libraryDescription));
-	memcpy(pInfo->libraryDescription, PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_DESCRIPTION, strlen(PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_DESCRIPTION));
-	pInfo->libraryVersion.major = 0x00;
-	pInfo->libraryVersion.minor = 0x01;
-
-	return CKR_OK;
+	do {
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
+		
+		rv = CKR_ARGUMENTS_BAD;
+		if (NULL == pInfo)
+			break;
+	
+		pInfo->cryptokiVersion.major = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MAJOR;
+		pInfo->cryptokiVersion.minor = PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_VERSION_MINOR;
+		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
+		memcpy(pInfo->manufacturerID, PKCS11_CRYPTOLIB_CK_INFO_MANUFACTURER_ID, strlen(PKCS11_CRYPTOLIB_CK_INFO_MANUFACTURER_ID));
+		pInfo->flags = 0;
+		memset(pInfo->libraryDescription, ' ', sizeof(pInfo->libraryDescription));
+		memcpy(pInfo->libraryDescription, PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_DESCRIPTION, strlen(PKCS11_CRYPTOLIB_CK_INFO_LIBRARY_DESCRIPTION));
+		pInfo->libraryVersion.major = 0x00;
+		pInfo->libraryVersion.minor = 0x01;
+		rv = CKR_OK;
+	} while (0);
+	
+	return rv;
 }
 
 
@@ -155,7 +162,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetFunctionList)(CK_FUNCTION_LIST_PTR_PTR ppFunction
 		return CKR_ARGUMENTS_BAD;
 
 	*ppFunctionList = &pkcs11_240_funcs;
-
+	
 	return CKR_OK;
 }
 
@@ -181,7 +188,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotList)(CK_BBOOL tokenPresent, CK_SLOT_ID_PTR p
 		pSlotList[0] = (CK_SLOT_ID)connMan.ctx; //PKCS11_CRYPTOLIB_CK_SLOT_ID;
 		*pulCount = 1;
 	}
-
+	
 	return CKR_OK;
 }
 
@@ -206,7 +213,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 	pInfo->hardwareVersion.minor = 0x00;
 	pInfo->firmwareVersion.major = 0x01;
 	pInfo->firmwareVersion.minor = 0x00;
-
+	
 	return CKR_OK;
 }
 
@@ -228,34 +235,45 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		if (NULL == pInfo)
 			break;
 
-		BYTE GET_DATA[] = {0x00, 0xCA, 0x00, 0xFF};
-		memcpy(connMan.apdu.cmd, GET_DATA, sizeof(GET_DATA));
+		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
+		memcpy(connMan.apdu.cmd, SELECT, sizeof(SELECT));
+		connMan.apdu.cmdLen = sizeof(SELECT);
 		sc_rv = sc_apdu_transmit();
 
-		if (sc_rv != SCARD_S_SUCCESS) {
-			rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+		if (sc_rv != SCARD_S_SUCCESS)
 			break;
-		}
+		
+		BYTE GET_DATA[] = {0x00, 0xCA, 0x00, 0xFF};
+		memcpy(connMan.apdu.cmd, GET_DATA, sizeof(GET_DATA));
+		connMan.apdu.cmdLen = sizeof(GET_DATA);
+		sc_rv = sc_apdu_transmit();
+
+		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+		if (sc_rv != SCARD_S_SUCCESS)
+			break;
+
 		LONG offset = 5;
 		LONG len = 0;
-		BYTE flags = connMan.apdu.resp[offset++];
+		// BYTE flags = connMan.apdu.resp[offset++];
 
-		switch (flags) {
-			case 0x01: // LCS CREATION
-				pInfo->flags = CKF_USER_PIN_TO_BE_CHANGED | CKF_SO_PIN_TO_BE_CHANGED;
-			break;
-			case 0x03: // LCS INITIALIZATION
-				pInfo->flags = CKF_SO_PUK_INITIALIZED;
-			break;
-			case 0x04: // LCS DEACTIVATE
-				pInfo->flags = CKF_USER_PIN_LOCKED;
-			break;
-			case 0x05: // LCS ACTIVATE
-				pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
-			break;
-			case 0x0C: // LCS TERMINATED
-		}
+		// switch (flags) {
+		// 	case 0x01: // LCS CREATION
+		// 		pInfo->flags = CKF_USER_PIN_TO_BE_CHANGED | CKF_SO_PIN_TO_BE_CHANGED;
+		// 	break;
+		// 	case 0x03: // LCS INITIALIZATION
+		// 		pInfo->flags = CKF_SO_PUK_INITIALIZED;
+		// 	break;
+		// 	case 0x04: // LCS DEACTIVATE
+		// 		pInfo->flags = CKF_USER_PIN_LOCKED;
+		// 	break;
+		// 	case 0x05: // LCS ACTIVATE
+		// 		pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
+		// 	break;
+		// 	case 0x0C: // LCS TERMINATED
+		// }
 
+		pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
 		pInfo->hardwareVersion.major = 0x01;
 		pInfo->hardwareVersion.minor = 0x00;
 
@@ -292,9 +310,10 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		pInfo->ulFreePrivateMemory = CK_UNAVAILABLE_INFORMATION;
 		
 		memset(pInfo->utcTime, ' ', sizeof(pInfo->utcTime));
+		rv = CKR_OK;
 	} while(0);
 
-	return CKR_OK;
+	return rv;
 }
 
 
