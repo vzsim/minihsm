@@ -13,7 +13,7 @@ static CK_ULONG ulPinLenMax = 0;
 CK_FUNCTION_LIST pkcs11_240_funcs =
 {
 	{0x02, 0x28},
-&C_Initialize,
+	&C_Initialize,
 	&C_Finalize,
 	&C_GetInfo,
 	&C_GetFunctionList,
@@ -83,10 +83,80 @@ CK_FUNCTION_LIST pkcs11_240_funcs =
 	&C_WaitForSlotEvent
 };
 
+#define CRYPTOKI_DEBUG
+#if defined(CRYPTOKI_DEBUG)
+#	define DBG_PRINT_FUNC_NAME(name)		\
+	printf("%s\n", name);
+
+#	define DBG_PRINT_APDU(buff, len, isCmd)	\
+	do {									\
+		if (isCmd) {						\
+			print_cmd_name(buff, len);		\
+			printf(">> ");					\
+		} else {							\
+			printf("<< ");					\
+		}									\
+		for (uint32_t i = 0; i < len; ++i) {\
+			if ((i != 0) && ((i % 32) == 0))\
+				printf("\n   ");			\
+			printf("%02x ", buff[i]);		\
+		}									\
+		printf("\n");						\
+	} while (0);							
+
+#else
+#	define DBG_PRINT_FUNC_NAME(name)
+#	define DBG_PRINT_APDU(buff, len, isCmd)
+#endif
+
+typedef struct {
+	uint8_t cls_ins_p1[4];
+	const char* str;
+} cmd_struct;
+
+cmd_struct known_commands[] = {
+	{{0x00, 0xa4, 0x04, 0x00}, "SELECT"},
+	{{0x00, 0xca, 0x00, 0xff}, "GET DATA"},
+	{{0x00, 0x25, 0x01, 0x01}, "INIT PIN"},
+	{{0x00, 0x25, 0x01, 0x02}, "INIT TOKEN"},
+	{{0x00, 0x25, 0x00, 0x00}, "UPDATE TOKEN"},
+};
+
+static void
+print_cmd_name(BYTE* cmd, ULONG cmdLen)
+{	
+	for (uint32_t i = 0; i < sizeof(known_commands) / sizeof(cmd_struct); ++i) {
+		if (!memcmp(known_commands[i].cls_ins_p1, cmd, 4)) {
+			printf("%s\n", known_commands[i].str);
+			return;
+		}
+	}
+
+	printf("UNKNOWN COMMAND\n");
+}
+
+static LONG
+transmit(BYTE* cmd, ULONG cmdLen)
+{
+	LONG res;
+	memcpy(connMan.apdu.cmd, cmd, cmdLen);
+	connMan.apdu.cmdLen = cmdLen;
+	
+	DBG_PRINT_APDU(connMan.apdu.cmd, connMan.apdu.cmdLen, 1)
+
+	res =  sc_apdu_transmit();
+	
+	DBG_PRINT_APDU(connMan.apdu.resp, connMan.apdu.respLen, 0)
+	return res;
+}
+
+
 CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 {
 	CK_RV rv;
 	IGNORE(pInitArgs);
+
+	DBG_PRINT_FUNC_NAME("C_Initialize")
 
 	do {
 		rv = CKR_CRYPTOKI_ALREADY_INITIALIZED;
@@ -114,6 +184,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 
 CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 {
+	DBG_PRINT_FUNC_NAME("C_Finalize")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -130,6 +202,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 CK_DEFINE_FUNCTION(CK_RV, C_GetInfo)(CK_INFO_PTR pInfo)
 {
 	CK_RV rv;
+	DBG_PRINT_FUNC_NAME("C_GetInfo")
 
 	do {
 		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -158,6 +231,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetInfo)(CK_INFO_PTR pInfo)
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetFunctionList)(CK_FUNCTION_LIST_PTR_PTR ppFunctionList)
 {
+	DBG_PRINT_FUNC_NAME("C_GetFunctionList")
+
 	if (NULL == ppFunctionList)
 		return CKR_ARGUMENTS_BAD;
 
@@ -168,6 +243,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetFunctionList)(CK_FUNCTION_LIST_PTR_PTR ppFunction
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetSlotList)(CK_BBOOL tokenPresent, CK_SLOT_ID_PTR pSlotList, CK_ULONG_PTR pulCount)
 {
+	DBG_PRINT_FUNC_NAME("C_GetSlotList")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -195,6 +272,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotList)(CK_BBOOL tokenPresent, CK_SLOT_ID_PTR p
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pInfo)
 {
+	DBG_PRINT_FUNC_NAME("C_GetSlotInfo")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -222,6 +301,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 {
 	CK_RV rv;
 	LONG sc_rv;
+
+	DBG_PRINT_FUNC_NAME("C_GetTokenInfo")
+
 	do {
 		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
 		if (CK_FALSE == pkcs11_initialized)
@@ -236,68 +318,70 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 			break;
 
 		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
-		memcpy(connMan.apdu.cmd, SELECT, sizeof(SELECT));
-		connMan.apdu.cmdLen = sizeof(SELECT);
-		sc_rv = sc_apdu_transmit();
+		sc_rv = transmit(SELECT, sizeof(SELECT));
 
 		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
 		if (sc_rv != SCARD_S_SUCCESS)
 			break;
-		
+
 		BYTE GET_DATA[] = {0x00, 0xCA, 0x00, 0xFF};
-		memcpy(connMan.apdu.cmd, GET_DATA, sizeof(GET_DATA));
-		connMan.apdu.cmdLen = sizeof(GET_DATA);
-		sc_rv = sc_apdu_transmit();
-
+		sc_rv = transmit(GET_DATA, sizeof(GET_DATA));
+		
 		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
 		if (sc_rv != SCARD_S_SUCCESS)
 			break;
 
-		LONG offset = 5;
+		LONG offset = 0;
 		LONG len = 0;
-		// BYTE flags = connMan.apdu.resp[offset++];
+		BYTE flags = connMan.apdu.resp[offset++];
 
-		// switch (flags) {
-		// 	case 0x01: // LCS CREATION
-		// 		pInfo->flags = CKF_USER_PIN_TO_BE_CHANGED | CKF_SO_PIN_TO_BE_CHANGED;
-		// 	break;
-		// 	case 0x03: // LCS INITIALIZATION
-		// 		pInfo->flags = CKF_SO_PUK_INITIALIZED;
-		// 	break;
-		// 	case 0x04: // LCS DEACTIVATE
-		// 		pInfo->flags = CKF_USER_PIN_LOCKED;
-		// 	break;
-		// 	case 0x05: // LCS ACTIVATE
-		// 		pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
-		// 	break;
-		// 	case 0x0C: // LCS TERMINATED
-		// }
+		switch (flags) {
+			case 0x01: // LCS CREATION
+				pInfo->flags = CKF_USER_PIN_TO_BE_CHANGED | CKF_SO_PIN_TO_BE_CHANGED;
+			break;
+			case 0x03: // LCS INITIALIZATION
+				pInfo->flags = CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_TO_BE_CHANGED; //https://meet.google.com/xeg-yegi-oir
+			break;
+			case 0x04: // LCS DEACTIVATE
+				pInfo->flags = CKF_USER_PIN_LOCKED;
+			break;
+			case 0x05: // LCS ACTIVATE
+				pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
+			break;
+			case 0x0C: // LCS TERMINATED
+		}
 
-		pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
 		pInfo->hardwareVersion.major = 0x01;
 		pInfo->hardwareVersion.minor = 0x00;
 
 		pInfo->firmwareVersion.major = connMan.apdu.resp[offset++];
 		pInfo->firmwareVersion.minor = connMan.apdu.resp[offset++];
 
-		pInfo->ulMaxPinLen = ulPinLenMax = connMan.apdu.resp[offset++];
-		pInfo->ulMinPinLen = ulPinLenMin = connMan.apdu.resp[offset++];
+		ulPinLenMin = connMan.apdu.resp[offset++];
+		ulPinLenMax = connMan.apdu.resp[offset++];
+
+		pInfo->ulMinPinLen = ulPinLenMin;
+		pInfo->ulMaxPinLen = ulPinLenMax;
 		
 		len = connMan.apdu.resp[offset++];
 		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
 		memcpy(pInfo->manufacturerID, &connMan.apdu.resp[offset], len);
 
-		len = connMan.apdu.resp[offset + len];
+		offset += len;
+		len = connMan.apdu.resp[offset++];
 		memset(pInfo->label, ' ', sizeof(pInfo->label));
 		memcpy(pInfo->label, &connMan.apdu.resp[offset], len);
 
-		len = connMan.apdu.resp[offset + len];
+		offset += len;
+		len = connMan.apdu.resp[offset++];
 		memset(pInfo->model, ' ', sizeof(pInfo->model));
 		memcpy(pInfo->model, &connMan.apdu.resp[offset], len);
 
-		len = connMan.apdu.resp[offset + len];
+		offset += len;
+		len = connMan.apdu.resp[offset++];
 		memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
 		memcpy(pInfo->serialNumber, &connMan.apdu.resp[offset], len);
+
 		pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
 		pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
 		pInfo->ulMaxRwSessionCount = CK_EFFECTIVELY_INFINITE;
@@ -310,6 +394,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		pInfo->ulFreePrivateMemory = CK_UNAVAILABLE_INFORMATION;
 		
 		memset(pInfo->utcTime, ' ', sizeof(pInfo->utcTime));
+		
 		rv = CKR_OK;
 	} while(0);
 
@@ -319,6 +404,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismList)(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMechanismList, CK_ULONG_PTR pulCount)
 {
+	DBG_PRINT_FUNC_NAME("C_GetMechanismList")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -356,6 +443,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismList)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type, CK_MECHANISM_INFO_PTR pInfo)
 {
+	DBG_PRINT_FUNC_NAME("C_GetMechanismInfo")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -429,54 +518,130 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 }
 
 
-
+// pkcs11-tool --module ./build/src/libCryptoKey.so --init-token --label "MyHSM" --so-pin "01234"
 CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen, CK_UTF8CHAR_PTR pLabel)
 {
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	CK_RV rv;
+	LONG sc_rv;
+	
+	DBG_PRINT_FUNC_NAME("C_InitToken")
 
-	if ((CK_SLOT_ID)connMan.ctx != slotID)
-		return CKR_SLOT_ID_INVALID;
+	do {
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
+		
+		
+		rv = CKR_SLOT_ID_INVALID;
+		if ((CK_SLOT_ID)connMan.ctx != slotID)
+			break;
+		
+		rv = CKR_ARGUMENTS_BAD;
+		if (NULL == pPin)
+			break;
+		
+		rv = CKR_PIN_LEN_RANGE;
+		if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
+			break;
+	
+		rv = CKR_ARGUMENTS_BAD;
+		if (NULL == pLabel)
+			break;
+		
+		rv = CKR_SESSION_EXISTS;
+		if (CK_TRUE == pkcs11_session_opened)
+			break;
 
-	if (NULL == pPin)
-		return CKR_ARGUMENTS_BAD;
+		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
+		sc_rv = transmit(SELECT, sizeof(SELECT));
 
-	if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
-		return CKR_PIN_LEN_RANGE;
+		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+		if (sc_rv != SCARD_S_SUCCESS)
+			break;
 
-	if (NULL == pLabel)
-		return CKR_ARGUMENTS_BAD;
+		BYTE INIT_TOKEN[60] = {0x00, 0x25, 0x01, 0x02};
+		ULONG labelLen = strlen((const char *)pLabel);
+		INIT_TOKEN[4] = ulPinLen + labelLen + 4;	// '+ 4' - for tag and length fields of TLVs
+		
+		INIT_TOKEN[5] = 0x81;
+		INIT_TOKEN[6] = ulPinLen;
+		memcpy(&INIT_TOKEN[7], pPin, ulPinLen);
 
-	if (CK_TRUE == pkcs11_session_opened)
-		return CKR_SESSION_EXISTS;
+		INIT_TOKEN[7 + ulPinLen] = 0x82;
+		INIT_TOKEN[8 + ulPinLen] = labelLen;
+		memcpy(&INIT_TOKEN[9 + ulPinLen], pLabel, labelLen);
 
-	return CKR_OK;
+		sc_rv = transmit(INIT_TOKEN, INIT_TOKEN[4] + 5);
+		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+		if (sc_rv != SCARD_S_SUCCESS)
+			break;
+
+		rv = CKR_OK;
+	} while (0);
+
+	return rv;
 }
 
-
+// pkcs11-tool --module ./build/src/libCryptoKey.so --init-pin --login --so-pin 01234 --new-pin 43210
 CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen)
 {
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	CK_RV rv;
+	LONG sc_rv;
 
-	if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
-		return CKR_SESSION_HANDLE_INVALID;
+	DBG_PRINT_FUNC_NAME("C_InitPIN")
 
-	if (CKS_RW_SO_FUNCTIONS != pkcs11_session_state)
-		return CKR_USER_NOT_LOGGED_IN;
+	do {
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
+	
+		rv = CKR_SESSION_HANDLE_INVALID;
+		if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
+			break;
+		
+		rv = CKR_USER_NOT_LOGGED_IN;
+		if (CKS_RW_SO_FUNCTIONS != pkcs11_session_state)
+			break;
+		
+		rv = CKR_ARGUMENTS_BAD;
+		if (NULL == pPin)
+			break;
+		
+		rv = CKR_PIN_LEN_RANGE;
+		if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
+			break;
+		
+		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
+		sc_rv = transmit(SELECT, sizeof(SELECT));
 
-	if (NULL == pPin)
-		return CKR_ARGUMENTS_BAD;
+		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+		if (sc_rv != SCARD_S_SUCCESS)
+			break;
 
-	if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
-		return CKR_PIN_LEN_RANGE;
+		BYTE INIT_PIN[60] = {0x00, 0x25, 0x01, 0x01};
+		INIT_PIN[4] = ulPinLen + 2;	// '+ 2' - for tag and length fields of TLVs
+		
+		INIT_PIN[5] = 0x81;
+		INIT_PIN[6] = ulPinLen;
+		
+		memcpy(&INIT_PIN[7], pPin, ulPinLen);
+		sc_rv = transmit(INIT_PIN, INIT_PIN[4] + 5);
 
-	return CKR_OK;
+		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
+		if (sc_rv != SCARD_S_SUCCESS)
+			break;
+
+		rv = CKR_OK;
+	} while (0);
+
+	return rv;
 }
 
 
 CK_DEFINE_FUNCTION(CK_RV, C_SetPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pOldPin, CK_ULONG ulOldLen, CK_UTF8CHAR_PTR pNewPin, CK_ULONG ulNewLen)
 {
+	DBG_PRINT_FUNC_NAME("C_SetPIN")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -504,6 +669,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_SetPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR 
 
 CK_DEFINE_FUNCTION(CK_RV, C_OpenSession)(CK_SLOT_ID slotID, CK_FLAGS flags, CK_VOID_PTR pApplication, CK_NOTIFY Notify, CK_SESSION_HANDLE_PTR phSession)
 {
+	DBG_PRINT_FUNC_NAME("C_OpenSession")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -533,6 +700,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_OpenSession)(CK_SLOT_ID slotID, CK_FLAGS flags, CK_V
 
 CK_DEFINE_FUNCTION(CK_RV, C_CloseSession)(CK_SESSION_HANDLE hSession)
 {
+	DBG_PRINT_FUNC_NAME("C_CloseSession")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -549,6 +718,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_CloseSession)(CK_SESSION_HANDLE hSession)
 
 CK_DEFINE_FUNCTION(CK_RV, C_CloseAllSessions)(CK_SLOT_ID slotID)
 {
+	DBG_PRINT_FUNC_NAME("C_CloseAllSessions")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -565,6 +736,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_CloseAllSessions)(CK_SLOT_ID slotID)
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetSessionInfo)(CK_SESSION_HANDLE hSession, CK_SESSION_INFO_PTR pInfo)
 {
+	DBG_PRINT_FUNC_NAME("C_GetSessionInfo")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -587,6 +760,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSessionInfo)(CK_SESSION_HANDLE hSession, CK_SESSI
 
 CK_DEFINE_FUNCTION(CK_RV, C_GetOperationState)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pOperationState, CK_ULONG_PTR pulOperationStateLen)
 {
+	DBG_PRINT_FUNC_NAME("C_GetOperationState")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -615,6 +790,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetOperationState)(CK_SESSION_HANDLE hSession, CK_BY
 
 CK_DEFINE_FUNCTION(CK_RV, C_SetOperationState)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pOperationState, CK_ULONG ulOperationStateLen, CK_OBJECT_HANDLE hEncryptionKey, CK_OBJECT_HANDLE hAuthenticationKey)
 {
+	DBG_PRINT_FUNC_NAME("C_SetOperationState")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -638,6 +815,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_SetOperationState)(CK_SESSION_HANDLE hSession, CK_BY
 CK_DEFINE_FUNCTION(CK_RV, C_Login)(CK_SESSION_HANDLE hSession, CK_USER_TYPE userType, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen)
 {
 	CK_RV rv = CKR_OK;
+	
+	DBG_PRINT_FUNC_NAME("C_Login")
 
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -691,6 +870,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_Login)(CK_SESSION_HANDLE hSession, CK_USER_TYPE user
 
 CK_DEFINE_FUNCTION(CK_RV, C_Logout)(CK_SESSION_HANDLE hSession)
 {
+	DBG_PRINT_FUNC_NAME("C_Logout")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -2522,6 +2703,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_CancelFunction)(CK_SESSION_HANDLE hSession)
 
 CK_DEFINE_FUNCTION(CK_RV, C_WaitForSlotEvent)(CK_FLAGS flags, CK_SLOT_ID_PTR pSlot, CK_VOID_PTR pReserved)
 {
+	DBG_PRINT_FUNC_NAME("C_WaitForSlotEvent")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
