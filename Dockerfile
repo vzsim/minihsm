@@ -23,7 +23,7 @@ FROM debian:12
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y libpcsclite1 pcscd pcsc-tools curl opensc opensc-pkcs11 gnutls-bin && \
+    apt-get install -y git build-essential cmake libpcsclite-dev libpcsclite1 pcscd pcsc-tools curl opensc opensc-pkcs11 gnutls-bin && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/vsmartcard/install/ /
@@ -36,5 +36,6 @@ RUN chmod +x /data/vcard
 ENV PATH="/data:${PATH}"
 RUN echo 'pcscd && sleep 1' >> /etc/bash.bashrc
 RUN echo '/data/vcard &' >> /etc/bash.bashrc
+WORKDIR /workspace
 
 CMD ["/bin/bash"]

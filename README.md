@@ -19,5 +19,17 @@ docker build -t vcard-runner-crypto-lib .
 mount directories you want to use inside docker ```-v src dst```
 
 ```bash
-docker run -it -v "$PWD:/workspace" -v "$PWD/build/src:/cryptolib" vcard-runner 
+docker run -it -v "$PWD:/workspace" vcard-runner-crypto-lib 
+```
+
+build CryptoLib.so inside docker container
+
+```bash
+./build.sh
+```
+
+run inside docker
+
+```bash
+pkcs11-tool --module ./build/src/libCryptoKey.so -I
 ```
