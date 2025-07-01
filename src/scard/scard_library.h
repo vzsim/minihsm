@@ -50,8 +50,4 @@ LONG sc_apdu_transmit(void);
 LONG sc_card_connect(void);
 LONG sc_card_disconnect(void);
 
-// =================== UTILS =================== //
-uint8_t stringify_hex(const char* string, BYTE outBuff[CAPDU_LENGTH], PDWORD outLen);
-void print_bytes(uint8_t* bytes, uint32_t bytesLen);
-
 #endif /* SCARD_LIBRARY_H */

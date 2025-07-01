@@ -55,16 +55,27 @@ sc_get_available_readers(void)
 LONG
 sc_card_connect(void)
 {
-	LONG rv;
-	connMan.ifdState.szReader = &connMan.ifdList[0];
+	LONG rv = SCARD_E_READER_UNAVAILABLE;
+	
 
 	do {
-		// Wait 10 milliseconds for card insertion event.
-		rv = SCardGetStatusChange(connMan.ctx, 10, &connMan.ifdState, 1);
-		if (rv != SCARD_S_SUCCESS)
-			break;
+		for (uint32_t i = 0; i < connMan.ifdListLen - 1; ++i) {
+			
+			printf("%s\n", &connMan.ifdList[i]);
+			connMan.ifdState.szReader = &connMan.ifdList[i];
 
-		rv = SCardConnect(connMan.ctx, connMan.ifdList, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connMan.connHdlr, &connMan.connPtcl);
+			// Wait 10 milliseconds for card insertion event.
+			rv = SCardGetStatusChange(connMan.ctx, 10, &connMan.ifdState, 1);
+			if (rv == SCARD_S_SUCCESS) {
+				rv = SCardConnect(connMan.ctx, &connMan.ifdList[i], SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connMan.connHdlr, &connMan.connPtcl);
+				if (rv == SCARD_S_SUCCESS) {
+					break;
+				}
+			} else {
+				while (connMan.ifdList[i++] != '\0');
+			}
+		}
+		
 	} while (0);
 
 	return rv;
@@ -99,63 +110,13 @@ sc_apdu_transmit(void)
 	memset(connMan.apdu.resp, 0x00, RAPDU_LENGTH);
 
 	do {
-		if (connMan.apdu.cmdLen > CAPDU_LENGTH)
+		if (connMan.apdu.cmdLen > CAPDU_LENGTH) {
 			break;
-		
+		}
+
 		protocolType = (connMan.connPtcl == SCARD_PROTOCOL_T0) ? SCARD_PCI_T0 : SCARD_PCI_T1;
 		rv = SCardTransmit(connMan.connHdlr, protocolType, connMan.apdu.cmd, connMan.apdu.cmdLen, NULL, connMan.apdu.resp, &connMan.apdu.respLen);
 	} while (0);
 
 	return rv;
-}
-
-// =================== UTILS =================== //
-
-uint8_t
-stringify_hex(const char* string, BYTE outBuff[CAPDU_LENGTH], PDWORD outLen)
-{
-	if(string == NULL) 
-		return 1;
-
-	uint32_t index = 0;
-	uint32_t wSpaces = 0;
-	uint32_t slength = strlen(string);
-
-	memset(outBuff, 0, CAPDU_LENGTH);
-
-	for (index = 0; index < slength; ++index) {
-		
-		char c = string[index];
-		int value = 0;
-		
-		if(c >= '0' && c <= '9') {
-			value = (c - '0');
-		} else if (c >= 'A' && c <= 'F') {
-			value = (10 + (c - 'A'));
-		} else if (c >= 'a' && c <= 'f')
-			value = (10 + (c - 'a'));
-		else if (c == ' ') {
-			wSpaces++;
-			continue;
-		}
-		else {	// encountering a non-hexadecimal character 
-			return 1;
-		}
-
-		outBuff[(index / 2)] += value << (((index + 1) % 2) * 4);
-	}
-
-	*outLen = (index - wSpaces) / 2;
-
-	return 0;
-}
-
-void
-print_bytes(uint8_t* bytes, uint32_t bytesLen)
-{
-    for (uint32_t i = 0; i < bytesLen; ++i) {
-        printf("%02X ", bytes[i]);
-    }
-
-    printf("\n");
 }
