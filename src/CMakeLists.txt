@@ -10,6 +10,10 @@ target_include_directories(${ENTRY_POINT}
 	PUBLIC /usr/include/PCSC
 )
 
+add_compile_definitions(
+	CRYPTOKI_DEBUG
+)
+
 if(CMAKE_HOST_APPLE)
   #target_link_libraries(${ENTRY_POINT} libpcsclite)
   find_library(PCSC_FRAMEWORK PCSC)

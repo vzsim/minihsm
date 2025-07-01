@@ -83,7 +83,6 @@ CK_FUNCTION_LIST pkcs11_240_funcs =
 	&C_WaitForSlotEvent
 };
 
-#define CRYPTOKI_DEBUG
 #if defined(CRYPTOKI_DEBUG)
 
 #	define DBG_PRINT_FUNC_NAME(name)		\
@@ -168,13 +167,16 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 			
 		rv = CKR_FUNCTION_FAILED;
 		if (sc_create_ctx() != SCARD_S_SUCCESS){
-			printf("1\n"); break;}
+			break;
+		}
 		
 		if (sc_get_available_readers() != SCARD_S_SUCCESS){
-			printf("2\n"); break;}
+			break;
+		}
 			
 		if (sc_card_connect() != SCARD_S_SUCCESS){
-			printf("3\n"); break;}
+			break;
+		}
 			
 		pkcs11_initialized = CK_TRUE;
 		rv = CKR_OK;

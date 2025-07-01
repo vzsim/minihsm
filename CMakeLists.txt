@@ -6,15 +6,3 @@ set(ENTRY_POINT "CryptoKey")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -O0 -g")
 
 add_subdirectory(src)
-
-# add_library(${ENTRY_POINT} MODULE
-# 	main.c
-# )
-
-# target_include_directories(${ENTRY_POINT}
-# 	PUBLIC ${PROJECT_SOURCE_DIR}/src/scard
-# )
-
-# target_link_libraries(${ENTRY_POINT}
-# 	${SCARD_LIB}
-# )

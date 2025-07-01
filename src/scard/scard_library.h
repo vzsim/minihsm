@@ -33,7 +33,7 @@ typedef struct {
 	DWORD             connPtcl;					// Connection protocol (T=0/T=1)
 	LPSTR             ifdList;					// The list of available readers
 	DWORD             ifdListLen;				// The length of list of available readers
-	SCARD_READERSTATE ifdState;					// The state of reader connected to
+	SCARD_READERSTATE ifdState[4];				// The state of reader connected to
 	char              ifdName[MAX_READERNAME];	// The name of this reader
 	DWORD             ifdNameLen;
 	Apdu_t            apdu;						// CR-APDU
