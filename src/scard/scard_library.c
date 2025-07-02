@@ -62,10 +62,14 @@ static errorCode codes[] = {
 };
 
 #if defined(CRYPTOKI_DEBUG)
-#define DBG_PRINT_ERROR(rv)	\
+#	define DBG_PRINT_ERROR(rv)	\
 	print_error_code(rv);
+
+#	define DBG_PRINT_IFD_NAME()	\
+	printf("\n%s\n", connMan.ifdState[i].szReader);
 #else
-	#define DBG_PRINT_ERROR(rv)
+#	define DBG_PRINT_ERROR(rv)
+#	define DBG_PRINT_IFD_NAME()
 #endif
 
 ConnectionManager_t connMan;
@@ -149,17 +153,17 @@ sc_card_connect(void)
 	do {
 		for (int32_t i = 0; i < 4; ++i) {
 			
-			printf("%s\n", connMan.ifdState[i].szReader);
-
 			// Wait 10 milliseconds for card insertion event.
-			rv = SCardGetStatusChange(connMan.ctx, 10, &connMan.ifdState[i], 4);
+			rv = SCardGetStatusChange(connMan.ctx, 10, &connMan.ifdState[0], 4);
 			if (rv == SCARD_S_SUCCESS) {
 				rv = SCardConnect(connMan.ctx, connMan.ifdState[i].szReader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connMan.connHdlr, &connMan.connPtcl);
 				if (rv == SCARD_S_SUCCESS) {
+					DBG_PRINT_IFD_NAME()
 					break;
 				}
+			} else {
+				DBG_PRINT_ERROR(rv)
 			}
-			DBG_PRINT_ERROR(rv)
 		}
 	} while (0);
 
