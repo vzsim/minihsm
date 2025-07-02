@@ -1,11 +1,11 @@
 #include "pkcs11-cryptolib.h"
 #include "scard_library.h"
 
-CK_BBOOL pkcs11_initialized = CK_FALSE;
-CK_BBOOL pkcs11_session_opened = CK_FALSE;
-CK_ULONG pkcs11_session_state = CKS_RO_PUBLIC_SESSION;
-PKCS11_CRYPTOLIB_CK_OPERATION pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
-CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
+static CK_BBOOL pkcs11_initialized = CK_FALSE;
+static CK_BBOOL pkcs11_session_opened = CK_FALSE;
+static CK_ULONG pkcs11_session_state = CKS_RO_PUBLIC_SESSION;
+static PKCS11_CRYPTOLIB_CK_OPERATION pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
+static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
 
 static CK_ULONG ulPinLenMin = 0;
 static CK_ULONG ulPinLenMax = 0;
@@ -83,8 +83,8 @@ CK_FUNCTION_LIST pkcs11_240_funcs =
 	&C_WaitForSlotEvent
 };
 
-#define CRYPTOKI_DEBUG
 #if defined(CRYPTOKI_DEBUG)
+
 #	define DBG_PRINT_FUNC_NAME(name)		\
 	printf("%s\n", name);
 
@@ -163,16 +163,20 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 		if (pkcs11_initialized == CK_TRUE)
 			break;
 		
-		rv = CKR_FUNCTION_FAILED;
 		sc_reset_conn_manager();
-		if (sc_create_ctx() != SCARD_S_SUCCESS)
-			break;
-		
-		if (sc_get_available_readers() != SCARD_S_SUCCESS)
-			break;
 			
-		if (sc_card_connect() != SCARD_S_SUCCESS)
+		rv = CKR_FUNCTION_FAILED;
+		if (sc_create_ctx() != SCARD_S_SUCCESS){
 			break;
+		}
+		
+		if (sc_get_available_readers() != SCARD_S_SUCCESS){
+			break;
+		}
+			
+		if (sc_card_connect() != SCARD_S_SUCCESS){
+			break;
+		}
 			
 		pkcs11_initialized = CK_TRUE;
 		rv = CKR_OK;
@@ -184,18 +188,28 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 
 CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 {
+	CK_RV rv;
 	DBG_PRINT_FUNC_NAME("C_Finalize")
 
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	do {
 
-	IGNORE(pReserved);
-	
-	sc_card_disconnect();
-	sc_delete_ctx();
-	pkcs11_initialized = CK_FALSE;
-	
-	return CKR_OK;
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
+
+		IGNORE(pReserved);
+
+		rv = CKR_FUNCTION_FAILED;
+		if (sc_card_disconnect() != SCARD_S_SUCCESS)
+			break;
+		
+		sc_delete_ctx();
+		
+		pkcs11_initialized = CK_FALSE;
+		rv = CKR_OK;
+	} while (0);
+
+	return rv;
 }
 
 
