@@ -1,0 +1,5 @@
+bin/
+.vscode/
+tests/
+*.cap
+ant-javacard.jar
