@@ -32,4 +32,5 @@ run inside docker
 
 ```bash
 pkcs11-tool --module ./build/src/libCryptoKey.so -I
+pkcs11-tool --module ./build/src/libCryptoKey.so -T
 ```
