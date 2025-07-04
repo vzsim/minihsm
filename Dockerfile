@@ -23,7 +23,8 @@ FROM debian:12
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y git build-essential cmake libpcsclite-dev libpcsclite1 pcscd pcsc-tools curl opensc opensc-pkcs11 gnutls-bin && \
+    apt-get install -y git unzip openjdk-17-jdk build-essential cmake ant \
+    libpcsclite-dev libpcsclite1 pcscd pcsc-tools curl opensc opensc-pkcs11 gnutls-bin && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/vsmartcard/install/ /
@@ -31,7 +32,12 @@ WORKDIR /data
 RUN ARCH=$(dpkg --print-architecture) && \
     curl -sSL https://simburg.com/releases/vcard/latest/debian_12_${ARCH}/vcard -o /data/vcard
 
-RUN chmod +x /data/vcard
+RUN curl -sSL https://simburg.com/releases/tools/JCShell.zip -o ./JCShell.zip && \
+    unzip ./JCShell.zip -d ./ && \
+    rm ./JCShell.zip && \
+    echo '/set-var path "/workspace/CryptoKey/Scripts"' >> ./jcshell.rc
+
+RUN chmod +x /data/vcard /data/jcshell.sh
 
 ENV PATH="/data:${PATH}"
 RUN echo 'pcscd && sleep 1' >> /etc/bash.bashrc

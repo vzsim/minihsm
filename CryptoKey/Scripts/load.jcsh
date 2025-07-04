@@ -1,7 +1,5 @@
-
-
 /set-var myDir    "${script.name;dirname}"
-
+/term
 /reset
 /card
 
@@ -12,7 +10,7 @@ auth
 -delete -r A000000001
 
 
-upload -c ${myDir}/../bin/com/vzsim/minihsm/javacard/minihsm.cap
+upload -c ${myDir}/../../build/CryptoKey.cap
 
 install -i A00000000101 -q C900 A000000001 A00000000101
 
