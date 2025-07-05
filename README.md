@@ -28,6 +28,7 @@ Create build directory if it doesn't exist:
 
 ```bash
 mkdir build
+git submodule update --init --recursive
 ```
 
 Build CryptoLib.so inside docker container in mounted workspace folder:
