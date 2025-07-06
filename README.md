@@ -2,15 +2,10 @@
 
 A PKCS#11 library to the Mini HSM
 
-## Build libCryptoKey.so
-
-```bash
-./build.sh
-```
-
 ## Build Image
 
 ```bash
+git submodule update --init --recursive
 docker build -t vcard-runner-crypto-lib .
 ```
 
@@ -28,13 +23,12 @@ Create build directory if it doesn't exist:
 
 ```bash
 mkdir build
-git submodule update --init --recursive
 ```
 
 Build CryptoLib.so inside docker container in mounted workspace folder:
 
 ```bash
-cd CryptoLib && ./build.sh
+cd CryptoLib && ./build.sh && cd ..
 ```
 
 Build CryptoKey.cap inside docker container in mounted workspace folder:
