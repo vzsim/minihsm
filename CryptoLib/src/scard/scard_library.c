@@ -136,6 +136,7 @@ sc_get_available_readers(void)
 		rv = SCardListReaders(connMan.ctx, NULL, connMan.ifdList, &connMan.ifdListLen);
 
 		for (uint32_t i = 0, j = 0; i < connMan.ifdListLen - 1; ++j) {
+			connMan.ifdCount++;
 			connMan.ifdState[j].szReader = &connMan.ifdList[i];
 			while (connMan.ifdList[i++] != '\0');
 		}
@@ -151,10 +152,10 @@ sc_card_connect(void)
 	LONG rv = SCARD_E_READER_UNAVAILABLE;
 
 	do {
-		for (int32_t i = 0; i < 4; ++i) {
+		for (int32_t i = 0; connMan.ifdState[i].szReader != NULL; ++i) {
 			
 			// Wait 10 milliseconds for card insertion event.
-			rv = SCardGetStatusChange(connMan.ctx, 10, &connMan.ifdState[0], 4);
+			rv = SCardGetStatusChange(connMan.ctx, 10, &connMan.ifdState[0], connMan.ifdCount);
 			if (rv == SCARD_S_SUCCESS) {
 				rv = SCardConnect(connMan.ctx, connMan.ifdState[i].szReader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connMan.connHdlr, &connMan.connPtcl);
 				if (rv == SCARD_S_SUCCESS) {

@@ -36,6 +36,7 @@ typedef struct {
 	SCARD_READERSTATE ifdState[4];				// The state of reader connected to
 	char              ifdName[MAX_READERNAME];	// The name of this reader
 	DWORD             ifdNameLen;
+	DWORD             ifdCount;
 	Apdu_t            apdu;						// CR-APDU
 } ConnectionManager_t;
 
