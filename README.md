@@ -34,7 +34,7 @@ git submodule update --init --recursive
 Build CryptoLib.so inside docker container in mounted workspace folder:
 
 ```bash
-cd CryptoLib && ./build.sh && mv ./build/src/libCryptoKey.so ../build/libCryptoKey.so && cd ..
+cd CryptoLib && ./build.sh
 ```
 
 Build CryptoKey.cap inside docker container in mounted workspace folder:

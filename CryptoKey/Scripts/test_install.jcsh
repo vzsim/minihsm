@@ -14,8 +14,11 @@
 #/term Remote|8050:T1
 /term
 /card
+#Note: the version mentioned in these keys is specific for a test-card. Use your own version (default is 32).
+set-key 1/1/DES-ECB/404142434445464748494A4B4C4D4E4F 1/2/DES-ECB/404142434445464748494A4B4C4D4E4F 1/3/DES-ECB/404142434445464748494A4B4C4D4E4F
 auth
-upload /home/tislamov/Develop/CryptoKey/CryptoKey.cap
+-delete -r A000000001
+upload /home/tislamov/Develop/minihsm/CryptoKey/CryptoKey.cap
 install -i A00000000101 -q C9#() A000000001 A00000000101
-
+ls
 # test: GET DATA

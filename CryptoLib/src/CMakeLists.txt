@@ -21,3 +21,9 @@ if(CMAKE_HOST_APPLE)
 else()
   target_link_libraries(${ENTRY_POINT} pcsclite)
 endif()
+
+add_custom_command(TARGET ${ENTRY_POINT}
+	POST_BUILD
+	COMMAND mv  lib${ENTRY_POINT}.so ${PROJECT_SOURCE_DIR}/build/${ENTRY_POINT}
+	BYPRODUCTS lib${ENTRY_POINT}.so
+)
