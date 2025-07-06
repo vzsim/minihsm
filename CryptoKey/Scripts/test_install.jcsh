@@ -1,0 +1,21 @@
+# To make the JCShell able parse this script, right after running it, pass the following commands
+# 
+# $ ./jcshell.sh 
+# 
+# Welcome to NXP JCShell
+# (c) 2022 NXP Semiconductors
+# ------------------------------------------------------------------------------
+# 
+# Please set JAVA_OPTS environment variable with libpcsclite library along with path. 
+# enabling modes echo and trace... 
+# - /set-var path /home/tislamov/Develop/CryptoKey/tests
+# - test_install
+
+#/term Remote|8050:T1
+/term
+/card
+auth
+upload /home/tislamov/Develop/CryptoKey/CryptoKey.cap
+install -i A00000000101 -q C9#() A000000001 A00000000101
+
+# test: GET DATA

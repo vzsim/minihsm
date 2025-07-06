@@ -1,0 +1,62 @@
+# CHANGE REFERENCE DATA (ISO 7816-4, clause 11.5.7)
+# If the state is STATE_CREATION, we can set the PUK without verification.
+# The state will advance to STATE_INITIALISATION (i.e. the PUK must be set before the PIN).
+# In a "later" state the user must authenticate himself to be able to change the PIN.
+# 
+# Use cases:
+#
+# at STATE_CREATION state:
+#
+# set the PUK
+# 1. 00240102 10 [PUK value]
+# After that the state will advance to STATE_INITIALIZATION.
+#
+# Notice that the current implementation allows to set PIN without PUK:
+#    00240101 XX [4 <= PIN <= 16]
+# In this case no PUK will be set, ever. To change this behavor, set PUK_MUST_BE_SET variable to 'true'.
+# If this command is passed, the state will step over STATE_INITIALISATION right to STATE_OPERATIONAL_ACTIVATED.
+#
+# at STATE_INITIALISATION state:
+#
+# set the PIN
+# 2. 00240101 XX [4 <= PIN <= 16]
+#
+# at STATE_OPERATIONAL_ACTIVATED
+# 
+# at this state the only possible operation is changing PIN.
+# 3. 00240001 20 [4 <= PIN <= 16<padding bytes>]
+
+/echo ""
+/echo "SELECT IsoApplet"
+/select A00000000101
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "CHANGE REF DATA: set PUK"
+/send 00250102#(81#(50554B20706173730A0A))
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "CHANGE REF DATA: set PIN"
+/send 00250101#(81#(50494E20706173730A0A))
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "CHANGE REF DATA: update PIN"
+/send 00250000#(81#(50494E20706173730A0A)82#(6E65772050494E20706173730A0A))
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "CHANGE REF DATA: update PIN"
+/send 00250000#(81#(6E65772050494E20706173730A0A)82#(50494E20706173730A0A))
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end

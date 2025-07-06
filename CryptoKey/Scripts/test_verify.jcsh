@@ -1,0 +1,52 @@
+/echo ""
+/echo "SELECT IsoApplet"
+/select A00000000101
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+
+/echo ""
+/echo "VERIFY PIN: incorrect P1P2"
+/send 0020000101
+if ${last.response.status} != 63C3
+	/error "Expected SW 63C3 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "VERIFY PIN: incorrect P1P2"
+/send 0020000000
+if ${last.response.status} != 6A86
+	/error "Expected SW 6A86 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "VERIFY PIN: wrong length"
+/send 00200001
+if ${last.response.status} != 63C3
+	/error "Expected SW 63C3 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "VERIFY PIN: wrong PIN"
+/set-var SWORD 0x63C2
+/set-var i 0
+while ${i} < 2
+	/send 00200001#(0101010101010101)
+	/set-var SWORD $(/expr ${SWORD} - ${i})
+	if ${last.response.status} != ${SWORD;h4}
+		/error "Expected SW ${SWORD} but got ${last.response.status}"
+	end
+	/set-var i $(/expr ${i} + 1)
+end
+
+/echo ""
+/echo "VERIFY PIN"
+/send 00200001#(50494E20706173730A0A)
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "VERIFY PIN: number of tries left"
+/send 00200001
