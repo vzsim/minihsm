@@ -6,22 +6,17 @@ if ${last.response.status} != 9000
 end
 
 /echo ""
-/echo "GET DATA"
-/send 00CA0101
-if ${last.response.status} != 9000
-	/error "Expected SW 9000 but got ${last.response.status}"
-end
-
-/echo ""
 /echo "GET DATA with wrong P1P2"
 /set-var p1p2 0
-while ${p1p2} <= 0xFFFF
+while ${p1p2} <= 0x00FF
 	
 	/send 00CA${p1p2;h4}
 	
-	if ${p1p2} == 0x0101
-		/set-var p1p2 $(/expr ${p1p2} + 1)
-		continue
+	if ${p1p2} == 0x00FF
+		if ${last.response.status} != 9000
+			/error "Expected SW 9000 but got ${last.response.status}"
+		end
+		break
 	end
 
 	if ${last.response.status} != 6A86

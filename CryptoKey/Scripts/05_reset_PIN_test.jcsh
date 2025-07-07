@@ -1,4 +1,9 @@
 /echo ""
+/echo "*********************"
+/echo " RESET RETRY COUNTER "
+/echo "*********************"
+/echo ""
+
 /echo "SELECT IsoApplet"
 /select A00000000101
 if ${last.response.status} != 9000
@@ -7,7 +12,6 @@ end
 
 /echo ""
 /echo "VERIFY PIN: block card"
-/set-var SWORD 0x63C2
 /set-var i 0
 while ${i} < 3
 	/send 00200001#(0101010101010101)
@@ -17,10 +21,13 @@ end
 /echo ""
 /echo "RESET RETRY COUNTER: PUK tries remain"
 /send 002D0301
+if ${last.response.status} != 63CA
+	/error "Expected SW 63C3 but got ${last.response.status}"
+end
 
 /echo ""
 /echo "RESET RETRY COUNTER: activate card and reset PIN"
-/send 002D0101#(81#(50554B20706173730A0A))
+/send 002D0101#(81#(303132333435))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
@@ -36,7 +43,14 @@ end
 
 /echo ""
 /echo "RESET RETRY COUNTER: activate card and set new PIN"
-/send 002D0101#(81#(50554B20706173730A0A)82#(50494E20706173730A0A))
+/send 002D0001#(81#(303132333435)82#(3232323232))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "VERIFY PIN"
+/send 00200001#(3131313131)
+if ${last.response.status} != 63C2
+	/error "Expected SW 63C2 but got ${last.response.status}"
 end
