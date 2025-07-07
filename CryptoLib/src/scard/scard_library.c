@@ -1,6 +1,18 @@
 #include "scard_library.h"
 
 typedef struct {
+	SCARDCONTEXT      ctx;						// SCard connection contex
+	SCARDHANDLE       connHdlr;					// Connection handler
+	DWORD             connPtcl;					// Connection protocol (T=0/T=1)
+	LPSTR             ifdList;					// The list of available readers
+	DWORD             ifdListLen;				// The length of list of available readers
+	SCARD_READERSTATE ifdState[16];				// The state of reader connected to
+	char              ifdName[MAX_READERNAME];	// The name of this reader
+	DWORD             ifdNameLen;
+	DWORD             ifdCount;
+} ConnectionManager_t;
+
+typedef struct {
 	LONG code;
 	const char* name;
 } errorCode;
@@ -187,7 +199,7 @@ uint8_t
 sc_get_reader_status(void)
 {
 	// DWORD readerState = 0;
-	return SCARD_E_NO_SERVICE; //SCardStatus(connMan.connHdlr, connMan.ifdName, &connMan.ifdNameLen, &readerState, &connMan.connPtcl, connMan.ifdState.rgbAtr, &connMan.ifdState.cbAtr);
+	return 1; //SCardStatus(connMan.connHdlr, connMan.ifdName, &connMan.ifdNameLen, &readerState, &connMan.connPtcl, connMan.ifdState.rgbAtr, &connMan.ifdState.cbAtr);
 }
 
 uint8_t

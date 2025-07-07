@@ -16,18 +16,6 @@
 #include <stdio.h>
 #include <stdint.h>
 
-typedef struct {
-	SCARDCONTEXT      ctx;						// SCard connection contex
-	SCARDHANDLE       connHdlr;					// Connection handler
-	DWORD             connPtcl;					// Connection protocol (T=0/T=1)
-	LPSTR             ifdList;					// The list of available readers
-	DWORD             ifdListLen;				// The length of list of available readers
-	SCARD_READERSTATE ifdState[16];				// The state of reader connected to
-	char              ifdName[MAX_READERNAME];	// The name of this reader
-	DWORD             ifdNameLen;
-	DWORD             ifdCount;
-} ConnectionManager_t;
-
 uint8_t sc_create_ctx(void);
 void sc_delete_ctx(void);
 uint8_t sc_get_available_readers(void);

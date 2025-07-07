@@ -2,6 +2,7 @@
 #define CRYPTOLIB_H
 
 #include "pkcs11-cryptolib.h"
+#include "scard_library.h"
 
 #define CAPDU_LENGTH 261	// CLA INS P1 P1 Lc [255 bytes of CDATA] Le
 #define RAPDU_LENGTH 258	// [256 bytes of RDATA] SW1 SW2

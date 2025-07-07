@@ -489,7 +489,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen)
 {
 	CK_RV rv;
-	int32_t sc_rv;
 
 	DBG_PRINT_FUNC_NAME("C_InitPIN")
 
@@ -524,7 +523,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR
 		apduHdlr.cmdLen = 5;	// INIT PIN
 		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x01, 0x00}, apduHdlr.cmdLen);
 
-		uint8_t INIT_PIN[60] = {0x00, 0x25, 0x01, 0x01};
 		apduHdlr.cmd[4] = ulPinLen + 2;	// '+ 2' - for tag and length fields of TLVs
 		apduHdlr.cmdLen += apduHdlr.cmd[4];
 
