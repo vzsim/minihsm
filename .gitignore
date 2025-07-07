@@ -2,3 +2,4 @@ build/
 .vscode/
 pkcs11-tool.txt
 *.log
+.DS_Store
