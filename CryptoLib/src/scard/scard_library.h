@@ -21,13 +21,6 @@
 #define RAPDU_LENGTH 258	// [256 bytes of RDATA] SW1 SW2
 
 typedef struct {
-	BYTE  cmd[CAPDU_LENGTH];
-	DWORD cmdLen;
-	BYTE  resp[RAPDU_LENGTH];
-	DWORD respLen;
-} Apdu_t;
-
-typedef struct {
 	SCARDCONTEXT      ctx;						// SCard connection contex
 	SCARDHANDLE       connHdlr;					// Connection handler
 	DWORD             connPtcl;					// Connection protocol (T=0/T=1)
@@ -37,7 +30,7 @@ typedef struct {
 	char              ifdName[MAX_READERNAME];	// The name of this reader
 	DWORD             ifdNameLen;
 	DWORD             ifdCount;
-	Apdu_t            apdu;						// CR-APDU
+	// Apdu_t            apdu;						// CR-APDU
 } ConnectionManager_t;
 
 extern ConnectionManager_t connMan;

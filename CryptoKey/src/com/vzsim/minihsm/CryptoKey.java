@@ -65,6 +65,7 @@ public class CryptoKey extends Applet implements ISO7816
 	public
 	CryptoKey()
 	{
+		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
@@ -119,8 +120,14 @@ public class CryptoKey extends Applet implements ISO7816
 	 * CHANGE REFERENCE DATA (INS 0X25), ISO 7816-4, clause 11.5.7.
 	 * 
 	 * CDATA shall contain BER-TLV data object (ISO 7816-4, clause 6.3) to make it possible to
-	 * distinguish verification data (current PIN) from new reference data (new PIN). Thus the content
-	 * of CDATA at APP_STATE_ACTIVATED state (e.g. updating PIN) shall be as follow: [81, Len, CURR_PIN, 82, Len, NEW_PIN]
+	 * distinguish one type of data from another (i.e. current PIN and new PIN).
+	 * 
+	 * This method handles the following data at specific Life cycle states:
+	 * 
+	 * LCS							CDATA
+	 * APP_STATE_CREATION			[81 Len <Initial PUK bytes>]
+	 * APP_STATE_INITIALIZATION		[81 Len <Initial PIN bytes>]
+	 * APP_STATE_ACTIVATED			[81 Len <CURR PIN bytes> 82 Len <NEW PIN bytes>]
 	 * @param apdu
 	 */
 	private void
@@ -139,6 +146,7 @@ public class CryptoKey extends Applet implements ISO7816
 
 		cdataOff = apdu.getOffsetCdata();
 
+		// Common case for each LCS: either PIN or PUK.
 		len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x81);
 		off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x81);
 
@@ -154,7 +162,6 @@ public class CryptoKey extends Applet implements ISO7816
 					ISOException.throwIt(SW_INCORRECT_P1P2);
 				}
 
-				puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 				puk.update(buff, off, (byte)len);
 				puk.resetAndUnblock();
 				

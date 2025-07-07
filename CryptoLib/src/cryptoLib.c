@@ -1,5 +1,13 @@
 #include "pkcs11-cryptolib.h"
-#include "scard_library.h"
+// #include "scard_library.h"
+
+typedef struct {
+	BYTE  cmd[CAPDU_LENGTH];
+	DWORD cmdLen;
+	BYTE  resp[RAPDU_LENGTH];
+	DWORD respLen;
+	uint16_t sw;
+} Apdu_t;
 
 static CK_BBOOL pkcs11_initialized = CK_FALSE;
 static CK_BBOOL pkcs11_session_opened = CK_FALSE;
@@ -9,6 +17,7 @@ static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
 
 static CK_ULONG ulPinLenMin = 0;
 static CK_ULONG ulPinLenMax = 0;
+static Apdu_t apduHdlr;
 
 CK_FUNCTION_LIST pkcs11_240_funcs =
 {
@@ -138,16 +147,35 @@ print_cmd_name(BYTE* cmd, ULONG cmdLen)
 static LONG
 transmit(BYTE* cmd, ULONG cmdLen)
 {
-	LONG res;
-	memcpy(connMan.apdu.cmd, cmd, cmdLen);
-	connMan.apdu.cmdLen = cmdLen;
-	
-	DBG_PRINT_APDU(connMan.apdu.cmd, connMan.apdu.cmdLen, 1)
+	LONG rv = SCARD_E_INVALID_PARAMETER;
 
-	res =  sc_apdu_transmit();
+	do {
+		connMan.apdu.cmdLen = cmdLen;
+		memcpy(connMan.apdu.cmd, cmd, cmdLen);
+		
+		connMan.apdu.respLen = RAPDU_LENGTH;
+		memset(connMan.apdu.resp, 0x00, RAPDU_LENGTH);
+
+		if (connMan.apdu.cmdLen > CAPDU_LENGTH) {
+			break;
+		}
+
+		DBG_PRINT_APDU(connMan.apdu.cmd, connMan.apdu.cmdLen, 1)
 	
-	DBG_PRINT_APDU(connMan.apdu.resp, connMan.apdu.respLen, 0)
-	return res;
+		rv = sc_apdu_transmit();
+
+	} while (0);
+
+	return rv;
+}
+
+static void
+receive(BYTE* resp, ULONG* respLen, uint16_t* sw)
+{
+	memcpy(resp, connMan.apdu.resp, connMan.apdu.respLen);
+	*respLen = connMan.apdu.respLen;
+	*sw = ((((uint16_t)resp[*respLen - 2] << 8) & 0xFF00) | (resp[*respLen - 1] & 0x00FF));
+	DBG_PRINT_APDU(resp, *respLen, 0)
 }
 
 
@@ -331,13 +359,16 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		if (NULL == pInfo)
 			break;
 
-		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
-		sc_rv = transmit(SELECT, sizeof(SELECT));
-
+		apduHdlr.cmdLen = 11;
+		memcpy(apduHdlr.cmd, (BYTE[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
+		
+		sc_rv = transmit(apduHdlr.cmd, apduHdlr.cmdLen);
 		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
 		if (sc_rv != SCARD_S_SUCCESS)
 			break;
 
+		receive(apduHdlr.resp, &apduHdlr.respLen, &apduHdlr.sw);
+		
 		BYTE GET_DATA[] = {0x00, 0xCA, 0x00, 0xFF};
 		sc_rv = transmit(GET_DATA, sizeof(GET_DATA));
 		

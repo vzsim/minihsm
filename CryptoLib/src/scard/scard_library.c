@@ -72,7 +72,7 @@ static errorCode codes[] = {
 #	define DBG_PRINT_IFD_NAME()
 #endif
 
-ConnectionManager_t connMan;
+static ConnectionManager_t connMan;
 
 static void
 print_error_code(LONG rv)
@@ -93,7 +93,7 @@ sc_reset_conn_manager(void)
 	connMan.apdu.respLen = RAPDU_LENGTH;
 	connMan.ifdNameLen = MAX_READERNAME;
 
-	for (uint32_t i = 0; i < 4; ++i) {
+	for (uint32_t i = 0; i < 16; ++i) {
 		connMan.ifdState[i].cbAtr = MAX_ATR_SIZE;
 		connMan.ifdState[i].dwCurrentState = SCARD_STATE_EMPTY;
 	}
@@ -194,19 +194,7 @@ sc_get_reader_status(void)
 LONG
 sc_apdu_transmit(void)
 {
-	LONG rv = SCARD_E_INVALID_PARAMETER;
 	const SCARD_IO_REQUEST* protocolType = NULL;
-	connMan.apdu.respLen = RAPDU_LENGTH;
-	memset(connMan.apdu.resp, 0x00, RAPDU_LENGTH);
-
-	do {
-		if (connMan.apdu.cmdLen > CAPDU_LENGTH) {
-			break;
-		}
-
-		protocolType = (connMan.connPtcl == SCARD_PROTOCOL_T0) ? SCARD_PCI_T0 : SCARD_PCI_T1;
-		rv = SCardTransmit(connMan.connHdlr, protocolType, connMan.apdu.cmd, connMan.apdu.cmdLen, NULL, connMan.apdu.resp, &connMan.apdu.respLen);
-	} while (0);
-
-	return rv;
+	protocolType = (connMan.connPtcl == SCARD_PROTOCOL_T0) ? SCARD_PCI_T0 : SCARD_PCI_T1;
+	return  SCardTransmit(connMan.connHdlr, protocolType, connMan.apdu.cmd, connMan.apdu.cmdLen, NULL, connMan.apdu.resp, &connMan.apdu.respLen);
 }
