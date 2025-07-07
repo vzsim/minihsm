@@ -203,7 +203,7 @@ sc_get_reader_status(void)
 }
 
 uint8_t
-sc_apdu_transmit(uint8_t* cmd, uint32_t cmdLen, uint8_t* resp, uint32_t* respLen)
+sc_apdu_transmit(uint8_t* cmd, uint32_t cmdLen, uint8_t* resp, uint64_t* respLen)
 {
 	LONG rv;
 	const SCARD_IO_REQUEST* protocolType = NULL;

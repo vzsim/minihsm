@@ -11,7 +11,7 @@ typedef struct {
 	uint8_t  cmd[CAPDU_LENGTH];
 	uint32_t cmdLen;
 	uint8_t  resp[RAPDU_LENGTH];
-	uint32_t respLen;
+	uint64_t respLen;
 	uint16_t sw;
 } Apdu_t;
 
