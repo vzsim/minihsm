@@ -28,7 +28,7 @@ Mount directories you want to use inside docker using `-v src dst`:
 docker run -it -v "$PWD:/workspace" vcard-runner-crypto-lib 
 ```
 
-### Build Steps
+### Build modules (inside the docker)
 
 Create build directory if it doesn't exist:
 
@@ -36,13 +36,13 @@ Create build directory if it doesn't exist:
 mkdir build
 ```
 
-Build CryptoLib.so inside docker container in mounted workspace folder:
+Build CryptoLib.so inside the mounted workspace folder:
 
 ```bash
 cd CryptoLib && ./build.sh && cd ..
 ```
 
-Build CryptoKey.cap inside docker container in mounted workspace folder:
+Build CryptoKey.cap inside the mounted workspace folder:
 
 ```bash
 cd CryptoKey && ant && mv ./CryptoKey.cap ../build/CryptoKey.cap && cd ..
@@ -54,7 +54,7 @@ Load CryptoKey.cap:
 /data/jcshell.sh -f /workspace/CryptoKey/Scripts/load.jcsh 
 ```
 
-### Testing
+### Run PKCS#11 tool
 
 Run inside docker:
 
