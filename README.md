@@ -2,10 +2,20 @@
 
 A PKCS#11 library to the Mini HSM
 
-## Build Image
+## Cloning repositories:
 
+Cloning the main rep into 'minihsm' folder:
+```bash
+git clone https://github.com/vzsim/minihsm.git .
+```
+Cloning the submodules:
 ```bash
 git submodule update --init --recursive
+```
+
+## Building Docker image
+
+```bash
 docker build -t vcard-runner-crypto-lib .
 ```
 
@@ -50,4 +60,5 @@ Run inside docker:
 ```bash
 pkcs11-tool --module ./build/libCryptoKey.so -I
 pkcs11-tool --module ./build/libCryptoKey.so -T
+pkcs11-tool --module ./build/libCryptoKey.so --init-token --label "MyHSM" --so-pin "01234"
 ```
