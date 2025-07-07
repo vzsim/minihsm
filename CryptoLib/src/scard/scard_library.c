@@ -62,17 +62,6 @@ static errorCode codes[] = {
 };
 
 #if defined(CRYPTOKI_DEBUG)
-#	define DBG_PRINT_ERROR(rv)	\
-	print_error_code(rv);
-
-#	define DBG_PRINT_IFD_NAME()	\
-	printf("\n%s\n", connMan.ifdState[i].szReader);
-#else
-#	define DBG_PRINT_ERROR(rv)
-#	define DBG_PRINT_IFD_NAME()
-#endif
-
-static ConnectionManager_t connMan;
 
 static void
 print_error_code(LONG rv)
@@ -86,39 +75,50 @@ print_error_code(LONG rv)
 	printf("Unknown SCARD error\n");
 }
 
-void
-sc_reset_conn_manager(void)
+#	define DBG_PRINT_ERROR(rv)	\
+	print_error_code(rv);
+
+#	define DBG_PRINT_IFD_NAME()	\
+	printf("\n%s\n", connMan.ifdState[i].szReader);
+
+#else
+#	define DBG_PRINT_ERROR(rv)
+#	define DBG_PRINT_IFD_NAME()
+#endif
+
+static ConnectionManager_t connMan;
+
+uint8_t
+sc_create_ctx(void)
 {
-	memset(&connMan, 0x00, sizeof(Apdu_t));
-	connMan.apdu.respLen = RAPDU_LENGTH;
-	connMan.ifdNameLen = MAX_READERNAME;
+	LONG rv;
+	memset(&connMan, 0x00, sizeof(ConnectionManager_t));
 
 	for (uint32_t i = 0; i < 16; ++i) {
 		connMan.ifdState[i].cbAtr = MAX_ATR_SIZE;
 		connMan.ifdState[i].dwCurrentState = SCARD_STATE_EMPTY;
 	}
-}
+	rv = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &connMan.ctx);
 
-LONG
-sc_create_ctx(void)
-{
-	return SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &connMan.ctx);
+	return rv == SCARD_S_SUCCESS ? 0 : 1;
 }
 
 void
 sc_delete_ctx(void)
 {
-	if (connMan.ctx)
+	if (connMan.ctx) {
 		SCardReleaseContext(connMan.ctx);
+	}
 
-	if (connMan.ifdList != NULL)
+	if (connMan.ifdList != NULL) {
 		free(connMan.ifdList);
+	}
 }
 
-LONG
+uint8_t
 sc_get_available_readers(void)
 {
-	LONG rv = SCARD_S_SUCCESS;
+	LONG rv;
 	do {
 		// Calculating a length required for a buffer to be allocated to hold the list of names of available readers
 		rv = SCardListReaders(connMan.ctx, NULL, NULL, &connMan.ifdListLen);
@@ -143,10 +143,10 @@ sc_get_available_readers(void)
 
 	} while (0);
 
-	return rv;
+	return rv == SCARD_S_SUCCESS ? 0 : 1;
 }
 
-LONG
+uint8_t
 sc_card_connect(void)
 {
 	LONG rv = SCARD_E_READER_UNAVAILABLE;
@@ -168,10 +168,10 @@ sc_card_connect(void)
 		}
 	} while (0);
 
-	return rv;
+	return rv == SCARD_S_SUCCESS ? 0 : 1;
 }
 
-LONG
+uint8_t
 sc_card_disconnect(void)
 {
 	LONG rv = SCARD_S_SUCCESS;
@@ -180,21 +180,24 @@ sc_card_disconnect(void)
 		rv = SCardDisconnect(connMan.connHdlr, SCARD_UNPOWER_CARD);
 	}
 
-	return rv;
+	return rv == SCARD_S_SUCCESS ? 0 : 1;
 }
 
-LONG
+uint8_t
 sc_get_reader_status(void)
 {
 	// DWORD readerState = 0;
-
 	return SCARD_E_NO_SERVICE; //SCardStatus(connMan.connHdlr, connMan.ifdName, &connMan.ifdNameLen, &readerState, &connMan.connPtcl, connMan.ifdState.rgbAtr, &connMan.ifdState.cbAtr);
 }
 
-LONG
-sc_apdu_transmit(void)
+uint8_t
+sc_apdu_transmit(uint8_t* cmd, uint32_t cmdLen, uint8_t* resp, uint32_t* respLen)
 {
+	LONG rv;
 	const SCARD_IO_REQUEST* protocolType = NULL;
+	
 	protocolType = (connMan.connPtcl == SCARD_PROTOCOL_T0) ? SCARD_PCI_T0 : SCARD_PCI_T1;
-	return  SCardTransmit(connMan.connHdlr, protocolType, connMan.apdu.cmd, connMan.apdu.cmdLen, NULL, connMan.apdu.resp, &connMan.apdu.respLen);
+	rv = SCardTransmit(connMan.connHdlr, protocolType, cmd, cmdLen, NULL, resp, respLen);
+
+	return rv == SCARD_S_SUCCESS ? 0 : 1;
 }

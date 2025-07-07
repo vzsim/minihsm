@@ -1,129 +1,7 @@
-#include "pkcs11-cryptolib.h"
-// #include "scard_library.h"
+#include "cryptoLib.h"
 
-typedef struct {
-	BYTE  cmd[CAPDU_LENGTH];
-	DWORD cmdLen;
-	BYTE  resp[RAPDU_LENGTH];
-	DWORD respLen;
-	uint16_t sw;
-} Apdu_t;
 
-static CK_BBOOL pkcs11_initialized = CK_FALSE;
-static CK_BBOOL pkcs11_session_opened = CK_FALSE;
-static CK_ULONG pkcs11_session_state = CKS_RO_PUBLIC_SESSION;
-static PKCS11_CRYPTOLIB_CK_OPERATION pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
-static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
-
-static CK_ULONG ulPinLenMin = 0;
-static CK_ULONG ulPinLenMax = 0;
-static Apdu_t apduHdlr;
-
-CK_FUNCTION_LIST pkcs11_240_funcs =
-{
-	{0x02, 0x28},
-	&C_Initialize,
-	&C_Finalize,
-	&C_GetInfo,
-	&C_GetFunctionList,
-	&C_GetSlotList,
-	&C_GetSlotInfo,
-	&C_GetTokenInfo,
-	&C_GetMechanismList,
-	&C_GetMechanismInfo,
-	&C_InitToken,
-	&C_InitPIN,
-	&C_SetPIN,
-	&C_OpenSession,
-	&C_CloseSession,
-	&C_CloseAllSessions,
-	&C_GetSessionInfo,
-	&C_GetOperationState,
-	&C_SetOperationState,
-	&C_Login,
-	&C_Logout,
-	&C_CreateObject,
-	&C_CopyObject,
-	&C_DestroyObject,
-	&C_GetObjectSize,
-	&C_GetAttributeValue,
-	&C_SetAttributeValue,
-	&C_FindObjectsInit,
-	&C_FindObjects,
-	&C_FindObjectsFinal,
-	&C_EncryptInit,
-	&C_Encrypt,
-	&C_EncryptUpdate,
-	&C_EncryptFinal,
-	&C_DecryptInit,
-	&C_Decrypt,
-	&C_DecryptUpdate,
-	&C_DecryptFinal,
-	&C_DigestInit,
-	&C_Digest,
-	&C_DigestUpdate,
-	&C_DigestKey,
-	&C_DigestFinal,
-	&C_SignInit,
-	&C_Sign,
-	&C_SignUpdate,
-	&C_SignFinal,
-	&C_SignRecoverInit,
-	&C_SignRecover,
-	&C_VerifyInit,
-	&C_Verify,
-	&C_VerifyUpdate,
-	&C_VerifyFinal,
-	&C_VerifyRecoverInit,
-	&C_VerifyRecover,
-	&C_DigestEncryptUpdate,
-	&C_DecryptDigestUpdate,
-	&C_SignEncryptUpdate,
-	&C_DecryptVerifyUpdate,
-	&C_GenerateKey,
-	&C_GenerateKeyPair,
-	&C_WrapKey,
-	&C_UnwrapKey,
-	&C_DeriveKey,
-	&C_SeedRandom,
-	&C_GenerateRandom,
-	&C_GetFunctionStatus,
-	&C_CancelFunction,
-	&C_WaitForSlotEvent
-};
-
-#if defined(CRYPTOKI_DEBUG)
-
-#	define DBG_PRINT_FUNC_NAME(name)		\
-	printf("%s\n", name);
-
-#	define DBG_PRINT_APDU(buff, len, isCmd)	\
-	do {									\
-		if (isCmd) {						\
-			print_cmd_name(buff, len);		\
-			printf(">> ");					\
-		} else {							\
-			printf("<< ");					\
-		}									\
-		for (uint32_t i = 0; i < len; ++i) {\
-			if ((i != 0) && ((i % 32) == 0))\
-				printf("\n   ");			\
-			printf("%02x ", buff[i]);		\
-		}									\
-		printf("\n");						\
-	} while (0);							
-
-#else
-#	define DBG_PRINT_FUNC_NAME(name)
-#	define DBG_PRINT_APDU(buff, len, isCmd)
-#endif
-
-typedef struct {
-	uint8_t cls_ins_p1[4];
-	const char* str;
-} cmd_struct;
-
-cmd_struct known_commands[] = {
+static cmd_struct known_commands[] = {
 	{{0x00, 0xa4, 0x04, 0x00}, "SELECT"},
 	{{0x00, 0xca, 0x00, 0xff}, "GET DATA"},
 	{{0x00, 0x25, 0x01, 0x01}, "INIT PIN"},
@@ -132,7 +10,7 @@ cmd_struct known_commands[] = {
 };
 
 static void
-print_cmd_name(BYTE* cmd, ULONG cmdLen)
+print_cmd_name(uint8_t* cmd, uint32_t cmdLen)
 {	
 	for (uint32_t i = 0; i < sizeof(known_commands) / sizeof(cmd_struct); ++i) {
 		if (!memcmp(known_commands[i].cls_ins_p1, cmd, 4)) {
@@ -144,40 +22,28 @@ print_cmd_name(BYTE* cmd, ULONG cmdLen)
 	printf("UNKNOWN COMMAND\n");
 }
 
-static LONG
-transmit(BYTE* cmd, ULONG cmdLen)
+static uint32_t
+transmit(Apdu_t* apduHdlr)
 {
-	LONG rv = SCARD_E_INVALID_PARAMETER;
+	int32_t rv = 1;
 
 	do {
-		connMan.apdu.cmdLen = cmdLen;
-		memcpy(connMan.apdu.cmd, cmd, cmdLen);
-		
-		connMan.apdu.respLen = RAPDU_LENGTH;
-		memset(connMan.apdu.resp, 0x00, RAPDU_LENGTH);
-
-		if (connMan.apdu.cmdLen > CAPDU_LENGTH) {
+		if (apduHdlr->cmdLen > CAPDU_LENGTH) {
 			break;
 		}
 
-		DBG_PRINT_APDU(connMan.apdu.cmd, connMan.apdu.cmdLen, 1)
+		apduHdlr->respLen = RAPDU_LENGTH;
+		DBG_PRINT_APDU(apduHdlr->cmd, apduHdlr->cmdLen, 1)
 	
-		rv = sc_apdu_transmit();
+		rv = sc_apdu_transmit(apduHdlr->cmd, apduHdlr->cmdLen, apduHdlr->resp, &apduHdlr->respLen);
+		apduHdlr->sw = ((((uint16_t)apduHdlr->resp[apduHdlr->respLen - 2] << 8) & 0xFF00)
+					|	 ((uint16_t)apduHdlr->resp[apduHdlr->respLen - 1]       & 0x00FF));
 
+		DBG_PRINT_APDU(apduHdlr->resp, apduHdlr->respLen, 0)
 	} while (0);
 
 	return rv;
 }
-
-static void
-receive(BYTE* resp, ULONG* respLen, uint16_t* sw)
-{
-	memcpy(resp, connMan.apdu.resp, connMan.apdu.respLen);
-	*respLen = connMan.apdu.respLen;
-	*sw = ((((uint16_t)resp[*respLen - 2] << 8) & 0xFF00) | (resp[*respLen - 1] & 0x00FF));
-	DBG_PRINT_APDU(resp, *respLen, 0)
-}
-
 
 CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 {
@@ -190,19 +56,17 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 		rv = CKR_CRYPTOKI_ALREADY_INITIALIZED;
 		if (pkcs11_initialized == CK_TRUE)
 			break;
-		
-		sc_reset_conn_manager();
 			
 		rv = CKR_FUNCTION_FAILED;
-		if (sc_create_ctx() != SCARD_S_SUCCESS){
+		if (sc_create_ctx()){
 			break;
 		}
 		
-		if (sc_get_available_readers() != SCARD_S_SUCCESS){
+		if (sc_get_available_readers()){
 			break;
 		}
 			
-		if (sc_card_connect() != SCARD_S_SUCCESS){
+		if (sc_card_connect()){
 			break;
 		}
 			
@@ -228,7 +92,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 		IGNORE(pReserved);
 
 		rv = CKR_FUNCTION_FAILED;
-		if (sc_card_disconnect() != SCARD_S_SUCCESS)
+		if (sc_card_disconnect())
 			break;
 		
 		sc_delete_ctx();
@@ -304,7 +168,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotList)(CK_BBOOL tokenPresent, CK_SLOT_ID_PTR p
 		if (0 == *pulCount)
 			return CKR_BUFFER_TOO_SMALL;
 
-		pSlotList[0] = (CK_SLOT_ID)connMan.ctx; //PKCS11_CRYPTOLIB_CK_SLOT_ID;
+		pSlotList[0] = pkcs11_slotID; //PKCS11_CRYPTOLIB_CK_SLOT_ID;
 		*pulCount = 1;
 	}
 	
@@ -319,7 +183,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if ((CK_SLOT_ID)connMan.ctx != slotID)
+	if (pkcs11_slotID != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (NULL == pInfo)
@@ -342,7 +206,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 {
 	CK_RV rv;
-	LONG sc_rv;
 
 	DBG_PRINT_FUNC_NAME("C_GetTokenInfo")
 
@@ -352,33 +215,28 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 			break;
 		
 		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
-		if ((CK_SLOT_ID)connMan.ctx != slotID)
+		if (pkcs11_slotID != slotID)
 			break;
 		
 		rv = CKR_ARGUMENTS_BAD;
 		if (NULL == pInfo)
 			break;
 
+		rv = CKR_FUNCTION_FAILED;
+
 		apduHdlr.cmdLen = 11;
-		memcpy(apduHdlr.cmd, (BYTE[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
-		
-		sc_rv = transmit(apduHdlr.cmd, apduHdlr.cmdLen);
-		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
-		if (sc_rv != SCARD_S_SUCCESS)
+		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
+		if (transmit(&apduHdlr))
 			break;
 
-		receive(apduHdlr.resp, &apduHdlr.respLen, &apduHdlr.sw);
-		
-		BYTE GET_DATA[] = {0x00, 0xCA, 0x00, 0xFF};
-		sc_rv = transmit(GET_DATA, sizeof(GET_DATA));
-		
-		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
-		if (sc_rv != SCARD_S_SUCCESS)
+		apduHdlr.cmdLen = 5;
+		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xCA, 0x00, 0xFF, 0x00}, apduHdlr.cmdLen);
+		if (transmit(&apduHdlr))
 			break;
 
-		LONG offset = 0;
-		LONG len = 0;
-		BYTE flags = connMan.apdu.resp[offset++];
+		int32_t offset = 0;
+		int32_t len = 0;
+		uint8_t flags = apduHdlr.resp[offset++];
 
 		switch (flags) {
 			case 0x01: // LCS CREATION
@@ -399,33 +257,33 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		pInfo->hardwareVersion.major = 0x01;
 		pInfo->hardwareVersion.minor = 0x00;
 
-		pInfo->firmwareVersion.major = connMan.apdu.resp[offset++];
-		pInfo->firmwareVersion.minor = connMan.apdu.resp[offset++];
+		pInfo->firmwareVersion.major = apduHdlr.resp[offset++];
+		pInfo->firmwareVersion.minor = apduHdlr.resp[offset++];
 
-		ulPinLenMin = connMan.apdu.resp[offset++];
-		ulPinLenMax = connMan.apdu.resp[offset++];
+		ulPinLenMin = apduHdlr.resp[offset++];
+		ulPinLenMax = apduHdlr.resp[offset++];
 
 		pInfo->ulMinPinLen = ulPinLenMin;
 		pInfo->ulMaxPinLen = ulPinLenMax;
 		
-		len = connMan.apdu.resp[offset++];
+		len = apduHdlr.resp[offset++];
 		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
-		memcpy(pInfo->manufacturerID, &connMan.apdu.resp[offset], len);
+		memcpy(pInfo->manufacturerID, &apduHdlr.resp[offset], len);
 
 		offset += len;
-		len = connMan.apdu.resp[offset++];
+		len = apduHdlr.resp[offset++];
 		memset(pInfo->label, ' ', sizeof(pInfo->label));
-		memcpy(pInfo->label, &connMan.apdu.resp[offset], len);
+		memcpy(pInfo->label, &apduHdlr.resp[offset], len);
 
 		offset += len;
-		len = connMan.apdu.resp[offset++];
+		len = apduHdlr.resp[offset++];
 		memset(pInfo->model, ' ', sizeof(pInfo->model));
-		memcpy(pInfo->model, &connMan.apdu.resp[offset], len);
+		memcpy(pInfo->model, &apduHdlr.resp[offset], len);
 
 		offset += len;
-		len = connMan.apdu.resp[offset++];
+		len = apduHdlr.resp[offset++];
 		memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
-		memcpy(pInfo->serialNumber, &connMan.apdu.resp[offset], len);
+		memcpy(pInfo->serialNumber, &apduHdlr.resp[offset], len);
 
 		pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
 		pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
@@ -454,7 +312,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismList)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if ((CK_SLOT_ID)connMan.ctx != slotID)
+	if (pkcs11_slotID != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (NULL == pulCount)
@@ -493,7 +351,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if ((CK_SLOT_ID)connMan.ctx != slotID)
+	if (pkcs11_slotID != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (NULL == pInfo)
@@ -567,7 +425,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen, CK_UTF8CHAR_PTR pLabel)
 {
 	CK_RV rv;
-	LONG sc_rv;
 	
 	DBG_PRINT_FUNC_NAME("C_InitToken")
 
@@ -578,7 +435,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 		
 		
 		rv = CKR_SLOT_ID_INVALID;
-		if ((CK_SLOT_ID)connMan.ctx != slotID)
+		if (pkcs11_slotID != slotID)
 			break;
 		
 		rv = CKR_ARGUMENTS_BAD;
@@ -597,28 +454,29 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 		if (CK_TRUE == pkcs11_session_opened)
 			break;
 
-		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
-		sc_rv = transmit(SELECT, sizeof(SELECT));
-
-		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
-		if (sc_rv != SCARD_S_SUCCESS)
+		rv = CKR_FUNCTION_FAILED;
+		
+		apduHdlr.cmdLen = 11;
+		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
+		if (transmit(&apduHdlr))
 			break;
 
-		BYTE INIT_TOKEN[60] = {0x00, 0x25, 0x01, 0x02};
-		ULONG labelLen = strlen((const char *)pLabel);
-		INIT_TOKEN[4] = ulPinLen + labelLen + 4;	// '+ 4' - for tag and length fields of TLVs
-		
-		INIT_TOKEN[5] = 0x81;
-		INIT_TOKEN[6] = ulPinLen;
-		memcpy(&INIT_TOKEN[7], pPin, ulPinLen);
+		apduHdlr.cmdLen = 5;
+		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x02, 0x00}, apduHdlr.cmdLen);
 
-		INIT_TOKEN[7 + ulPinLen] = 0x82;
-		INIT_TOKEN[8 + ulPinLen] = labelLen;
-		memcpy(&INIT_TOKEN[9 + ulPinLen], pLabel, labelLen);
+		uint32_t labelLen = strlen((const char *)pLabel);
+		apduHdlr.cmd[4] = labelLen + ulPinLen + 4;	// '+ 4' - for tag and length fields of TLVs
+		apduHdlr.cmdLen += apduHdlr.cmd[4];
 
-		sc_rv = transmit(INIT_TOKEN, INIT_TOKEN[4] + 5);
-		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
-		if (sc_rv != SCARD_S_SUCCESS)
+		apduHdlr.cmd[5] = 0x81;
+		apduHdlr.cmd[6] = ulPinLen;
+		memcpy(&apduHdlr.cmd[7], pPin, ulPinLen);
+
+		apduHdlr.cmd[7 + ulPinLen] = 0x82;
+		apduHdlr.cmd[8 + ulPinLen] = labelLen;
+		memcpy(&apduHdlr.cmd[9 + ulPinLen], pLabel, labelLen);
+
+		if (transmit(&apduHdlr))
 			break;
 
 		rv = CKR_OK;
@@ -631,7 +489,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen)
 {
 	CK_RV rv;
-	LONG sc_rv;
+	int32_t sc_rv;
 
 	DBG_PRINT_FUNC_NAME("C_InitPIN")
 
@@ -656,24 +514,25 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR
 		if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
 			break;
 		
-		BYTE SELECT[] = {0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
-		sc_rv = transmit(SELECT, sizeof(SELECT));
-
-		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
-		if (sc_rv != SCARD_S_SUCCESS)
+		rv = CKR_FUNCTION_FAILED;
+		
+		apduHdlr.cmdLen = 11;
+		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
+		if (transmit(&apduHdlr))
 			break;
 
-		BYTE INIT_PIN[60] = {0x00, 0x25, 0x01, 0x01};
-		INIT_PIN[4] = ulPinLen + 2;	// '+ 2' - for tag and length fields of TLVs
-		
-		INIT_PIN[5] = 0x81;
-		INIT_PIN[6] = ulPinLen;
-		
-		memcpy(&INIT_PIN[7], pPin, ulPinLen);
-		sc_rv = transmit(INIT_PIN, INIT_PIN[4] + 5);
+		apduHdlr.cmdLen = 5;	// INIT PIN
+		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x01, 0x00}, apduHdlr.cmdLen);
 
-		rv = CKR_VENDOR_DEFINED | (CK_RV)sc_rv;
-		if (sc_rv != SCARD_S_SUCCESS)
+		uint8_t INIT_PIN[60] = {0x00, 0x25, 0x01, 0x01};
+		apduHdlr.cmd[4] = ulPinLen + 2;	// '+ 2' - for tag and length fields of TLVs
+		apduHdlr.cmdLen += apduHdlr.cmd[4];
+
+		apduHdlr.cmd[5] = 0x81;
+		apduHdlr.cmd[6] = ulPinLen;
+		
+		memcpy(&apduHdlr.cmd[7], pPin, ulPinLen);
+		if (transmit(&apduHdlr))
 			break;
 
 		rv = CKR_OK;
@@ -722,7 +581,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_OpenSession)(CK_SLOT_ID slotID, CK_FLAGS flags, CK_V
 	if (CK_TRUE == pkcs11_session_opened)
 		return CKR_SESSION_COUNT;
 
-	if ((CK_SLOT_ID)connMan.ctx != slotID)
+	if (pkcs11_slotID != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	if (!(flags & CKF_SERIAL_SESSION))
@@ -768,7 +627,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_CloseAllSessions)(CK_SLOT_ID slotID)
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
-	if ((CK_SLOT_ID)connMan.ctx != slotID)
+	if (pkcs11_slotID != slotID)
 		return CKR_SLOT_ID_INVALID;
 
 	pkcs11_session_opened = CK_FALSE;
@@ -792,7 +651,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSessionInfo)(CK_SESSION_HANDLE hSession, CK_SESSI
 	if (NULL == pInfo)
 		return CKR_ARGUMENTS_BAD;
 
-	pInfo->slotID = (CK_SLOT_ID)connMan.ctx;
+	pInfo->slotID = pkcs11_slotID;
 	pInfo->state = pkcs11_session_state;
 	pInfo->flags = CKF_SERIAL_SESSION;
 	if ((pkcs11_session_state != CKS_RO_PUBLIC_SESSION) && (pkcs11_session_state != CKS_RO_USER_FUNCTIONS))

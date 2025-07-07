@@ -16,10 +16,6 @@
 #include <stdio.h>
 #include <stdint.h>
 
-
-#define CAPDU_LENGTH 261	// CLA INS P1 P1 Lc [255 bytes of CDATA] Le
-#define RAPDU_LENGTH 258	// [256 bytes of RDATA] SW1 SW2
-
 typedef struct {
 	SCARDCONTEXT      ctx;						// SCard connection contex
 	SCARDHANDLE       connHdlr;					// Connection handler
@@ -30,18 +26,14 @@ typedef struct {
 	char              ifdName[MAX_READERNAME];	// The name of this reader
 	DWORD             ifdNameLen;
 	DWORD             ifdCount;
-	// Apdu_t            apdu;						// CR-APDU
 } ConnectionManager_t;
 
-extern ConnectionManager_t connMan;
-
-void sc_reset_conn_manager(void);
-LONG sc_create_ctx(void);
+uint8_t sc_create_ctx(void);
 void sc_delete_ctx(void);
-LONG sc_get_available_readers(void);
-LONG sc_get_reader_status(void);
-LONG sc_apdu_transmit(void);
-LONG sc_card_connect(void);
-LONG sc_card_disconnect(void);
+uint8_t sc_get_available_readers(void);
+uint8_t sc_get_reader_status(void);
+uint8_t sc_apdu_transmit(uint8_t* cmd, uint32_t cmdLen, uint8_t* resp, uint32_t* respLen);
+uint8_t sc_card_connect(void);
+uint8_t sc_card_disconnect(void);
 
 #endif /* SCARD_LIBRARY_H */
