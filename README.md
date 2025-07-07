@@ -6,6 +6,7 @@ A PKCS#11 library to the Mini HSM
 
 Cloning the main rep into 'minihsm' folder:
 ```bash
+mkdir minihsm && cd minihsm
 git clone https://github.com/vzsim/minihsm.git .
 ```
 Cloning the submodules:
