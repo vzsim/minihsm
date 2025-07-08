@@ -27,6 +27,11 @@
 # 3. 00240001 20 [4 <= PIN <= 16<padding bytes>]
 
 /echo ""
+/echo "*********************"
+/echo "CHANGE REFERENCE DATA"
+/echo "*********************"
+
+/echo ""
 /echo "SELECT IsoApplet"
 /select A00000000101
 if ${last.response.status} != 9000
@@ -34,29 +39,43 @@ if ${last.response.status} != 9000
 end
 
 /echo ""
-/echo "CHANGE REF DATA: set PUK"
-/send 00250102#(81#(50554B20706173730A0A))
+/echo "GET DATA: before"
+/send 00CA00FF00
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "CHANGE REF DATA: set PUK and Applet Label"
+/send 00250102#(81#(303132333435)82#(4D7948534D206170706C6574))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
 
 /echo ""
 /echo "CHANGE REF DATA: set PIN"
-/send 00250101#(81#(50494E20706173730A0A))
+/send 00250101#(81#(3131313131))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
 
 /echo ""
-/echo "CHANGE REF DATA: update PIN"
-/send 00250000#(81#(50494E20706173730A0A)82#(6E65772050494E20706173730A0A))
+/echo "CHANGE REF DATA: update PIN (22222)"
+/send 00250000#(81#(3131313131)82#(3232323232))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
 
 /echo ""
-/echo "CHANGE REF DATA: update PIN"
-/send 00250000#(81#(6E65772050494E20706173730A0A)82#(50494E20706173730A0A))
+/echo "CHANGE REF DATA: restore previous PIN (11111)"
+/send 00250000#(81#(3232323232)82#(3131313131))
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "GET DATA: after"
+/send 00CA00FF00
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
