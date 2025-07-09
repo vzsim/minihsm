@@ -159,7 +159,7 @@ sc_get_available_readers(void)
 }
 
 uint8_t
-sc_card_connect(void)
+sc_card_connect(uint16_t* protocolType)
 {
 	LONG rv = SCARD_E_READER_UNAVAILABLE;
 
@@ -172,6 +172,7 @@ sc_card_connect(void)
 				rv = SCardConnect(connMan.ctx, connMan.ifdState[i].szReader, SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1, &connMan.connHdlr, &connMan.connPtcl);
 				if (rv == SCARD_S_SUCCESS) {
 					DBG_PRINT_IFD_NAME()
+					*protocolType = (connMan.connPtcl == SCARD_PROTOCOL_T0) ? SCARD_PROTOCOL_T0 : SCARD_PROTOCOL_T1;
 					break;
 				}
 			} else {

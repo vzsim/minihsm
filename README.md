@@ -42,13 +42,13 @@ mkdir build
 Build CryptoLib.so inside the mounted workspace folder:
 
 ```bash
-cd CryptoLib && ./build.sh && cd ..
+cd CryptoLib && ./build.sh && cp ./build/libCryptoKey.so ../build && cd ..
 ```
 
 Build CryptoKey.cap inside the mounted workspace folder:
 
 ```bash
-cd CryptoKey && ant && mv ./CryptoKey.cap ../build/CryptoKey.cap && cd ..
+cd CryptoKey && ant && cp ./CryptoKey.cap ../build && cd ..
 ```
 
 Load CryptoKey.cap:
@@ -65,4 +65,5 @@ Run inside docker:
 pkcs11-tool --module ./build/libCryptoKey.so -I
 pkcs11-tool --module ./build/libCryptoKey.so -T
 pkcs11-tool --module ./build/libCryptoKey.so --init-token --label "MyHSM" --so-pin "01234"
+pkcs11-tool --module ./build/libCryptoKey.so --init-pin --login --so-pin 01234 --new-pin 43210
 ```

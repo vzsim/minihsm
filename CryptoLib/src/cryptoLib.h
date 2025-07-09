@@ -13,6 +13,7 @@ typedef struct {
 	uint8_t  resp[RAPDU_LENGTH];
 	uint64_t respLen;
 	uint16_t sw;
+	uint16_t  protocol;
 } Apdu_t;
 
 typedef struct {

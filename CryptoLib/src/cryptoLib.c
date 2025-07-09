@@ -2,6 +2,7 @@
 
 
 static cmd_struct known_commands[] = {
+	{{0x00, 0xc0, 0x00, 0x00}, "GET RESPONSE"},
 	{{0x00, 0xa4, 0x04, 0x00}, "SELECT"},
 	{{0x00, 0xca, 0x00, 0xff}, "GET DATA"},
 	{{0x00, 0x25, 0x01, 0x01}, "INIT PIN"},
@@ -22,7 +23,14 @@ print_cmd_name(uint8_t* cmd, uint32_t cmdLen)
 	printf("UNKNOWN COMMAND\n");
 }
 
-static uint32_t
+static void
+fetch_sw(Apdu_t* apduHdlr)
+{
+	apduHdlr->sw = ((((uint16_t)apduHdlr->resp[apduHdlr->respLen - 2] << 8) & 0xFF00)
+					|((uint16_t)apduHdlr->resp[apduHdlr->respLen - 1]       & 0x00FF));
+}
+
+static int32_t
 transmit(Apdu_t* apduHdlr)
 {
 	int32_t rv = 1;
@@ -36,10 +44,35 @@ transmit(Apdu_t* apduHdlr)
 		DBG_PRINT_APDU(apduHdlr->cmd, apduHdlr->cmdLen, 1)
 	
 		rv = sc_apdu_transmit(apduHdlr->cmd, apduHdlr->cmdLen, apduHdlr->resp, &apduHdlr->respLen);
-		apduHdlr->sw = ((((uint16_t)apduHdlr->resp[apduHdlr->respLen - 2] << 8) & 0xFF00)
-					|	 ((uint16_t)apduHdlr->resp[apduHdlr->respLen - 1]       & 0x00FF));
+		fetch_sw(apduHdlr);
 
 		DBG_PRINT_APDU(apduHdlr->resp, apduHdlr->respLen, 0)
+	} while (0);
+
+	return rv;
+}
+
+static uint32_t
+get_response(Apdu_t* apduHdlr)
+{
+	int32_t rv = 0;
+	apduHdlr->cmdLen = 5;
+	uint8_t get_resp[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+
+	do {
+		if (0x6100 != (apduHdlr->sw & 0xFF00)) {
+			break;
+		}
+		
+		get_resp[4] = apduHdlr->sw & 0x00FF;
+		memcpy(apduHdlr->cmd, get_resp, apduHdlr->cmdLen);
+
+		rv = 1;
+		if (transmit(apduHdlr)) {
+			break;
+		}
+		
+		rv = 0;
 	} while (0);
 
 	return rv;
@@ -66,7 +99,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 			break;
 		}
 			
-		if (sc_card_connect()){
+		if (sc_card_connect(&apduHdlr.protocol)){
 			break;
 		}
 			
@@ -202,7 +235,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 	return CKR_OK;
 }
 
-
+// pkcs11-tool --module ./build/src/libCryptoKey.so -T
 CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 {
 	CK_RV rv;
@@ -229,11 +262,17 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		if (transmit(&apduHdlr))
 			break;
 
+		if (get_response(&apduHdlr))
+			break;
+		
 		apduHdlr.cmdLen = 5;
 		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xCA, 0x00, 0xFF, 0x00}, apduHdlr.cmdLen);
 		if (transmit(&apduHdlr))
 			break;
-
+		
+		if (get_response(&apduHdlr))
+			break;
+		
 		int32_t offset = 0;
 		int32_t len = 0;
 		uint8_t flags = apduHdlr.resp[offset++];
@@ -461,6 +500,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 		if (transmit(&apduHdlr))
 			break;
 
+		if (get_response(&apduHdlr))
+			break;
+		
 		apduHdlr.cmdLen = 5;
 		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x02, 0x00}, apduHdlr.cmdLen);
 
@@ -475,10 +517,12 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 		apduHdlr.cmd[7 + ulPinLen] = 0x82;
 		apduHdlr.cmd[8 + ulPinLen] = labelLen;
 		memcpy(&apduHdlr.cmd[9 + ulPinLen], pLabel, labelLen);
-
 		if (transmit(&apduHdlr))
 			break;
 
+		if (get_response(&apduHdlr))
+			break;
+		
 		rv = CKR_OK;
 	} while (0);
 
@@ -520,6 +564,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR
 		if (transmit(&apduHdlr))
 			break;
 
+		if (get_response(&apduHdlr))
+			break;
+		
 		apduHdlr.cmdLen = 5;	// INIT PIN
 		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x01, 0x00}, apduHdlr.cmdLen);
 
@@ -533,6 +580,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR
 		if (transmit(&apduHdlr))
 			break;
 
+		if (get_response(&apduHdlr))
+			break;
+		
 		rv = CKR_OK;
 	} while (0);
 
