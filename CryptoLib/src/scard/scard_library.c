@@ -12,6 +12,9 @@ typedef struct {
 	DWORD             ifdCount;
 } ConnectionManager_t;
 
+
+#if defined(CRYPTOKI_DEBUG)
+
 typedef struct {
 	LONG code;
 	const char* name;
@@ -72,8 +75,6 @@ static errorCode codes[] = {
 	{SCARD_E_NO_KEY_CONTAINER, "SCARD_E_NO_KEY_CONTAINER" },
 	{SCARD_E_SERVER_TOO_BUSY, "SCARD_E_SERVER_TOO_BUSY" }
 };
-
-#if defined(CRYPTOKI_DEBUG)
 
 static void
 print_error_code(LONG rv)

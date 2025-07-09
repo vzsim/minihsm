@@ -1,28 +1,5 @@
 #include "cryptoLib.h"
 
-
-static cmd_struct known_commands[] = {
-	{{0x00, 0xc0, 0x00, 0x00}, "GET RESPONSE"},
-	{{0x00, 0xa4, 0x04, 0x00}, "SELECT"},
-	{{0x00, 0xca, 0x00, 0xff}, "GET DATA"},
-	{{0x00, 0x25, 0x01, 0x01}, "INIT PIN"},
-	{{0x00, 0x25, 0x01, 0x02}, "INIT TOKEN"},
-	{{0x00, 0x25, 0x00, 0x00}, "UPDATE TOKEN"},
-};
-
-static void
-print_cmd_name(uint8_t* cmd, uint32_t cmdLen)
-{	
-	for (uint32_t i = 0; i < sizeof(known_commands) / sizeof(cmd_struct); ++i) {
-		if (!memcmp(known_commands[i].cls_ins_p1, cmd, 4)) {
-			printf("%s\n", known_commands[i].str);
-			return;
-		}
-	}
-
-	printf("UNKNOWN COMMAND\n");
-}
-
 static void
 fetch_sw(Apdu_t* apduHdlr)
 {
@@ -71,7 +48,7 @@ get_response(Apdu_t* apduHdlr)
 		if (transmit(apduHdlr)) {
 			break;
 		}
-		
+
 		rv = 0;
 	} while (0);
 
