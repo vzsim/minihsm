@@ -1,14 +1,16 @@
 package com.vzsim.minihsm;
 
+import java.security.PrivateKey;
+
 import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
-
-import javacard.security.KeyBuilder;
 import javacard.security.KeyAgreement;
+import javacard.security.KeyBuilder;
+import javacard.security.KeyPair;
 
 public class CryptoKey extends Applet implements ISO7816
 {
@@ -65,7 +67,9 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN pin = null;
 	private OwnerPIN puk = null;
 	private byte[] TOKEN_LABEL;
-	private KeyAgreement dhShared;
+	private KeyAgreement keyAgreement;
+	private KeyPair keyPair;
+
 	public
 	CryptoKey()
 	{
@@ -73,12 +77,13 @@ public class CryptoKey extends Applet implements ISO7816
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
+
+		keyPair = new KeyPair(KeyPair.ALG_RSA, KeyBuilder.LENGTH_RSA_2048);
+		keyPair.genKeyPair();
+		keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_KDF, false);
+		keyAgreement.init(keyPair.getPrivate());
+
 		appletState = APP_STATE_CREATION;
-		dhShared = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		// 1. create Key domain parameters = KeyBuilder.buildKey(ALG_TYPE_DH_PARAMETERS)
-		// 2. call KeyAgreement kAgreement = KeyBuilder.buildKeyWithSharedDomain()
-		// OR...
-		/// call KeyAgreement kAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_DH_PLAIN)
 
 	}
 
@@ -353,21 +358,22 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		byte[] buf = apdu.getBuffer();
 		short p1p2 = (short)(((short)buf[ISO7816.OFFSET_P1] << (short)8) | (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF));
-		short offset = OFFSET_CDATA;
+		short cdataOff, lc, len, off;
 
 		// 1. add checks
 		if (p1p2 != (short)0x0000) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
-		// 2. generate shared secret based on formula:
-		//			shared_secret = host_pub_key ^ card_priv_key mod N
-		// 3. generate a challenge[32]
-		// 4. generate a session keys using formula:
-		//			Kenc = shared_secret[0:15] XOR challenge[0:15]
-		//			Kmac = shared_secret[16:31] XOR challenge[16:31]
-		// 5. set the "SM established" flag.
-		// 6. send the challenge to the host
+		lc = apdu.setIncomingAndReceive();
+		if (lc != apdu.getIncomingLength()) {
+			ISOException.throwIt(SW_WRONG_LENGTH);
+		}
+
+		cdataOff = apdu.getOffsetCdata();
+		keyAgreement.generateSecret(buf, cdataOff, (short)128, buf, (short)128);
+
+		apdu.setOutgoingAndSend((short)128, (short)20);
 	}
 
 	/**
