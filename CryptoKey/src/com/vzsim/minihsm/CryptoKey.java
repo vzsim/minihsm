@@ -1,7 +1,5 @@
 package com.vzsim.minihsm;
 
-import java.security.PrivateKey;
-
 import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
@@ -15,8 +13,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte INS_VERIFY                = (byte) 0x20;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte) 0x25;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte) 0x2D;
+	private static final byte INS_OPEN_SECURE_MESSAING  = (byte) 0x80;
 	private static final byte INS_GET_DATA				= (byte) 0xCA;
-
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
 
@@ -63,7 +61,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN pin = null;
 	private OwnerPIN puk = null;
 	private byte[] TOKEN_LABEL;
-	
+	private DH dh;
+
 	public
 	CryptoKey()
 	{
@@ -71,11 +70,7 @@ public class CryptoKey extends Applet implements ISO7816
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
-
-		keyPair = new KeyPair(KeyPair.ALG_RSA, KeyBuilder.LENGTH_RSA_2048);
-		keyPair.genKeyPair();
-		keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_KDF, false);
-		keyAgreement.init(keyPair.getPrivate());
+		dh = new DH();
 
 		appletState = APP_STATE_CREATION;
 	}
@@ -111,6 +106,9 @@ public class CryptoKey extends Applet implements ISO7816
 				} break;
 				case INS_RESET_RETRY_COUNTER: {
 					resetRetryCounter(apdu);
+				} break;
+				case INS_OPEN_SECURE_MESSAING: {
+					openSecureChannel(apdu);
 				} break;
 				case INS_GET_DATA: {
 					getData(apdu);
@@ -342,6 +340,20 @@ public class CryptoKey extends Applet implements ISO7816
 		appletState = APP_STATE_ACTIVATED;
 	}
 	
+
+	private void
+	openSecureChannel(APDU apdu)
+	{
+		byte[] buf = apdu.getBuffer();
+		short p1p2 = (short)(((short)buf[ISO7816.OFFSET_P1] << (short)8) | (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF));
+		short offset = OFFSET_CDATA;
+
+		// 1. add checks
+		if (p1p2 != (short)0x0000) {
+			ISOException.throwIt(SW_INCORRECT_P1P2);
+		}
+	}
+
 	/**
 	 * GET DATA apdu (INS = CA), ISO 7816-4, clause 11.4.3.
 	 * Available values:
