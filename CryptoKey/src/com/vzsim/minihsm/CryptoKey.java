@@ -4,6 +4,7 @@ import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
 import javacard.security.AESKey;
@@ -65,6 +66,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private byte[] TOKEN_LABEL;
 	private DH dh;
 	private final AESKey Kenc;
+	private boolean[] boolParams = JCSystem.makeTransientBooleanArray((short)2, JCSystem.CLEAR_ON_RESET);
 
 	public
 	CryptoKey()
@@ -74,6 +76,7 @@ public class CryptoKey extends Applet implements ISO7816
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
 		dh = new DH();
+		dh.init();
 		Kenc = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES_TRANSIENT_RESET, KeyBuilder.LENGTH_AES_128, false);
 
 		appletState = APP_STATE_CREATION;
@@ -353,15 +356,14 @@ public class CryptoKey extends Applet implements ISO7816
 		
 		switch (p1p2) {
 			case (short)0x0000:	// GET Y (Card's public key)
-				dh.init();
-				apdu.setOutgoing();
-				apdu.setOutgoingLength(DH.maxLength);
-				dh.getY(buf, (short) 0);
-				apdu.sendBytesLong(buf, (short) 0, DH.maxLength);
+				// dh.init();
+				dh.getY(buf, (short)0);
+				apdu.setOutgoingAndSend((short)0, DH.maxLength);
 			break;
 			case (short)0x0001:	// SET Y (Host's public key) and derive session keys 
 				dh.setY(buf, ISO7816.OFFSET_CDATA, DH.maxLength, (short) 0);
 				dh.deriveSessionKeys(Kenc);
+				boolParams[(short)0] = true;
 			break;
 			default:
 				ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
