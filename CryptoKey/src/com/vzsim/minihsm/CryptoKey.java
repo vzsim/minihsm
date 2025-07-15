@@ -8,9 +8,6 @@ import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
-import javacard.security.KeyAgreement;
-import javacard.security.KeyBuilder;
-import javacard.security.KeyPair;
 
 public class CryptoKey extends Applet implements ISO7816
 {
@@ -18,7 +15,6 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte INS_VERIFY                = (byte) 0x20;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte) 0x25;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte) 0x2D;
-	private static final byte INS_OPEN_SECURE_MESSAING  = (byte) 0x80;
 	private static final byte INS_GET_DATA				= (byte) 0xCA;
 
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
@@ -67,9 +63,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN pin = null;
 	private OwnerPIN puk = null;
 	private byte[] TOKEN_LABEL;
-	private KeyAgreement keyAgreement;
-	private KeyPair keyPair;
-
+	
 	public
 	CryptoKey()
 	{
@@ -84,7 +78,6 @@ public class CryptoKey extends Applet implements ISO7816
 		keyAgreement.init(keyPair.getPrivate());
 
 		appletState = APP_STATE_CREATION;
-
 	}
 
 	public static void
@@ -118,9 +111,6 @@ public class CryptoKey extends Applet implements ISO7816
 				} break;
 				case INS_RESET_RETRY_COUNTER: {
 					resetRetryCounter(apdu);
-				} break;
-				case INS_OPEN_SECURE_MESSAING: {
-					openSecureChannel(apdu);
 				} break;
 				case INS_GET_DATA: {
 					getData(apdu);
@@ -352,30 +342,6 @@ public class CryptoKey extends Applet implements ISO7816
 		appletState = APP_STATE_ACTIVATED;
 	}
 	
-
-	private void
-	openSecureChannel(APDU apdu)
-	{
-		byte[] buf = apdu.getBuffer();
-		short p1p2 = (short)(((short)buf[ISO7816.OFFSET_P1] << (short)8) | (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF));
-		short cdataOff, lc, len, off;
-
-		// 1. add checks
-		if (p1p2 != (short)0x0000) {
-			ISOException.throwIt(SW_INCORRECT_P1P2);
-		}
-
-		lc = apdu.setIncomingAndReceive();
-		if (lc != apdu.getIncomingLength()) {
-			ISOException.throwIt(SW_WRONG_LENGTH);
-		}
-
-		cdataOff = apdu.getOffsetCdata();
-		keyAgreement.generateSecret(buf, cdataOff, (short)128, buf, (short)128);
-
-		apdu.setOutgoingAndSend((short)128, (short)20);
-	}
-
 	/**
 	 * GET DATA apdu (INS = CA), ISO 7816-4, clause 11.4.3.
 	 * Available values:
