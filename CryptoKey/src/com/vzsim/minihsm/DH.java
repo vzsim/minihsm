@@ -104,7 +104,7 @@ public class DH {
     private RSAPrivateKey dhPriv;
     private Cipher dhCipher;
 
-    private byte[] P = {
+    private static final byte[] P = {
         (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
         (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xC9, (byte) 0x0F,
         (byte) 0xDA, (byte) 0xA2, (byte) 0x21, (byte) 0x68, (byte) 0xC2,
@@ -160,7 +160,7 @@ public class DH {
     };
 
     public static final short maxLength = 256;
-    private byte[] G = new byte[maxLength];
+    private static final byte[] G = new byte[maxLength];
     private byte[] Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
     private byte[] S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
 
@@ -189,25 +189,6 @@ public class DH {
 
         // Load DH's P as RSA's M
         dhPriv.setModulus(P, (short) 0, maxLength);
-
-        // Set private key into cipher
-        dhCipher.init(dhPriv, Cipher.MODE_DECRYPT);
-
-        // Execute Y = G^bobPrivKey mod P via RSA's decrypt
-        dhCipher.doFinal(G, (short) 0, maxLength, Y, (short) 0);
-    }
-
-    /**
-     * Initializes the DH "public key" value of Y while also specifying one's
-     * choice of private key value. Useful for scenarios where manually loading
-     * the DH private key is needed instead of on-board key generation.
-     */
-    public void init(byte[] privateKey, short offset) {
-        // Load DH's P as RSA's M
-        dhPriv.setModulus(P, (short) 0, maxLength);
-
-        // Load DH private key value as RSA's E
-        dhPriv.setExponent(privateKey, offset, maxLength);
 
         // Set private key into cipher
         dhCipher.init(dhPriv, Cipher.MODE_DECRYPT);
@@ -313,7 +294,7 @@ public class DH {
      *
      * @param Y
      */
-    public void doFinal(AESKey encKey) {
+    public void deriveSessionKeys(AESKey Kenc) {
         // Set private key into cipher
         dhCipher.init(dhPriv, Cipher.MODE_DECRYPT);
 
@@ -321,7 +302,7 @@ public class DH {
         dhCipher.doFinal(Y, (short) 0, maxLength, S, (short) 0);
 
         // Set session Encryption key
-        encKey.setKey(S, (short) 0);
+        Kenc.setKey(S, (short) 0);
 
         // Clear DH Private Key
         dhPriv.clearKey();
