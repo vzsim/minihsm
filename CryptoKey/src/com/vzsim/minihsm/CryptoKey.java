@@ -16,7 +16,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte INS_VERIFY                = (byte) 0x20;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte) 0x25;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte) 0x2D;
-	private static final byte INS_OPEN_SECURE_MESSAING  = (byte) 0x80;
+	private static final byte INS_OPEN_SM_SESSION       = (byte) 0x80;
 	private static final byte INS_GET_DATA				= (byte) 0xCA;
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
@@ -26,6 +26,11 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte PIN_MIN_LENGTH            = (byte) 0x04;
 	private static final byte PIN_MAX_LENGTH            = (byte) 0x10;
 	
+	private static final short APPLET_STATE_OFFSET_SM   = (short) 0x01;
+	private static final short APPLET_STATE_OFFSET_LCS  = (short) 0x00;
+	
+	private static final byte SM_STATE_ESTABLISHED      = (byte) 0xA5;
+
 	/** No restrictions */
 	private static final byte APP_STATE_CREATION        = (byte) 0x01;
 	
@@ -60,13 +65,13 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte API_VERSION_MAJOR = (byte)0x00;
 	private static final byte API_VERSION_MINOR = (byte)0x01;
 
-	private byte appletState;
+	private byte[] appletState;
+
 	private OwnerPIN pin = null;
 	private OwnerPIN puk = null;
 	private byte[] TOKEN_LABEL;
 	private DH dh;
 	private final AESKey Kenc;
-	private boolean[] boolParams = JCSystem.makeTransientBooleanArray((short)2, JCSystem.CLEAR_ON_RESET);
 
 	public
 	CryptoKey()
@@ -75,11 +80,15 @@ public class CryptoKey extends Applet implements ISO7816
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
+
+		appletState = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
+
 		dh = new DH();
 		dh.init();
+		
 		Kenc = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES_TRANSIENT_RESET, KeyBuilder.LENGTH_AES_128, false);
 
-		appletState = APP_STATE_CREATION;
+		appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_CREATION;
 	}
 
 	public static void
@@ -99,7 +108,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte[] buff = apdu.getBuffer();
 		byte ins = buff[OFFSET_INS];
 
-		if (appletState == APP_STATE_TERMINATED) {
+		if (appletState[APPLET_STATE_OFFSET_LCS] == APP_STATE_TERMINATED) {
 			ISOException.throwIt((short)(SW_UNKNOWN | APP_STATE_TERMINATED));
 		}
 		
@@ -114,8 +123,8 @@ public class CryptoKey extends Applet implements ISO7816
 				case INS_RESET_RETRY_COUNTER: {
 					resetRetryCounter(apdu);
 				} break;
-				case INS_OPEN_SECURE_MESSAING: {
-					openSecureChannel(apdu);
+				case INS_OPEN_SM_SESSION: {
+					openSecureMessagingSession(apdu);
 				} break;
 				case INS_GET_DATA: {
 					getData(apdu);
@@ -167,7 +176,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_DATA);
 		}
 		
-		switch (appletState) {
+		switch (appletState[APPLET_STATE_OFFSET_LCS]) {
 
 			case APP_STATE_CREATION: {	// Set PUK
 
@@ -183,7 +192,7 @@ public class CryptoKey extends Applet implements ISO7816
 				
 				// (off - 1) grab the length too.
 				Util.arrayCopyNonAtomic(buff, (short)(off - (short)1), TOKEN_LABEL, (short)0, (short)(len + (short)1));
-				appletState = APP_STATE_INITIALIZATION;
+				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_INITIALIZATION;
 
 			} break;
 			case APP_STATE_INITIALIZATION: {	// Set PIN
@@ -195,7 +204,7 @@ public class CryptoKey extends Applet implements ISO7816
 				pin.update(buff, off, (byte)len);
 				pin.resetAndUnblock();
 
-				appletState = APP_STATE_ACTIVATED;
+				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_ACTIVATED;
 				
 			} break;
 			case APP_STATE_ACTIVATED: {	// Update PIN
@@ -237,8 +246,9 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p2 = buff[OFFSET_P2];
 
 		short cdataOff, lc;
+		byte appState = appletState[APPLET_STATE_OFFSET_LCS];
 
-		if (appletState == APP_STATE_DEACTIVATED) {
+		if (appState == APP_STATE_DEACTIVATED) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
@@ -254,11 +264,11 @@ public class CryptoKey extends Applet implements ISO7816
 		cdataOff = apdu.getOffsetCdata();
 
 		// At the below mentioned states no PIN is set yet, thus there is no error at all.
-		if (lc == (byte)0x00 && (appletState == APP_STATE_CREATION || appletState == APP_STATE_INITIALIZATION)) {
+		if (lc == (byte)0x00 && (appState == APP_STATE_CREATION || appState == APP_STATE_INITIALIZATION)) {
 			
 			ISOException.throwIt(SW_NO_ERROR);
 
-		} else if (lc == (byte)0x00 && (appletState == APP_STATE_ACTIVATED)) {
+		} else if (lc == (byte)0x00 && (appState == APP_STATE_ACTIVATED)) {
 
 			// Absence of CDATA means that user requested the number of remaining tries.
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
@@ -272,7 +282,7 @@ public class CryptoKey extends Applet implements ISO7816
 		if (!pin.check(buff, cdataOff, (byte)lc)) {
 
 			if (pin.getTriesRemaining() < (byte)1) {
-				appletState = APP_STATE_DEACTIVATED;
+				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_DEACTIVATED;
 			}
 
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
@@ -295,7 +305,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p2 = buff[OFFSET_P2];
 		short cdataOff, lc, len, off;
 
-		if (appletState != APP_STATE_DEACTIVATED || puk == null) {
+		if (appletState[APPLET_STATE_OFFSET_LCS] != APP_STATE_DEACTIVATED || puk == null) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
@@ -324,7 +334,7 @@ public class CryptoKey extends Applet implements ISO7816
 
 		if (!puk.check(buff, off, (byte)len)) {
 			if (puk.getTriesRemaining() < (byte)1) {
-				appletState = APP_STATE_TERMINATED;
+				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_TERMINATED;
 			}
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | puk.getTriesRemaining()));
 		}
@@ -344,15 +354,16 @@ public class CryptoKey extends Applet implements ISO7816
 
 		// Committing commmon case for P1=0 and P1=1: reset and unblock PIN
 		pin.resetAndUnblock();
-		appletState = APP_STATE_ACTIVATED;
+		appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_ACTIVATED;
 	}
 	
 
 	private void
-	openSecureChannel(APDU apdu)
+	openSecureMessagingSession(APDU apdu)
 	{
 		byte[] buf = apdu.getBuffer();
-		short p1p2 = (short)(((short)buf[ISO7816.OFFSET_P1] << (short)8) | (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF));
+		short p1p2  = (short)((short)buf[ISO7816.OFFSET_P1] << (short)8);
+		      p1p2 |= (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF);
 		
 		switch (p1p2) {
 			case (short)0x0000:	// GET Y (Card's public key)
@@ -363,8 +374,10 @@ public class CryptoKey extends Applet implements ISO7816
 			case (short)0x0001:	// SET Y (Host's public key) and derive session keys 
 				dh.setY(buf, ISO7816.OFFSET_CDATA, DH.maxLength, (short) 0);
 				dh.deriveSessionKeys(Kenc);
-				boolParams[(short)0] = true;
+				appletState[APPLET_STATE_OFFSET_SM] = SM_STATE_ESTABLISHED;
 			break;
+			case (short)0xFFFF: // Reset SM session
+				appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
 			default:
 				ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
 		}
@@ -379,12 +392,14 @@ public class CryptoKey extends Applet implements ISO7816
 	getData(APDU apdu)
 	{
 		byte[] buf = apdu.getBuffer();
-		short p1p2 = (short)(((short)buf[ISO7816.OFFSET_P1] << (short)8) | (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF));
+		short p1p2  = (short)((short)buf[ISO7816.OFFSET_P1] << (short)8);
+		      p1p2 |= (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF);
+
 		short offset = OFFSET_CDATA;
 
 		switch (p1p2) {
 			case (short)0x00FF: {
-				buf[offset++] = appletState;
+				buf[offset++] = appletState[APPLET_STATE_OFFSET_LCS];
 				buf[offset++] = API_VERSION_MAJOR;
 				buf[offset++] = API_VERSION_MINOR;
 				buf[offset++] = PIN_MIN_LENGTH;

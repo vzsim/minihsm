@@ -161,8 +161,9 @@ public class DH {
 
     public static final short maxLength = 256;
     private static final byte[] G = new byte[maxLength];
-    private byte[] Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
-    private byte[] S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
+
+    private byte[] Y;
+    private byte[] S;
 
     public DH() {
         // Creates a RSA private key instance as template for the DH private key
@@ -170,6 +171,9 @@ public class DH {
 
         // Creates an RSA cipher instance
         dhCipher = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
+
+		Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
+		S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
 
         // Set default G to 2
         G[(short) (maxLength - 1)] = (byte) 0x02;
