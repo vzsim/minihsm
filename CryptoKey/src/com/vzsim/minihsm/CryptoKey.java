@@ -9,6 +9,8 @@ import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
 import javacard.security.AESKey;
 import javacard.security.KeyBuilder;
+import javacard.security.RandomData;
+import javacardx.crypto.Cipher;
 
 public class CryptoKey extends Applet implements ISO7816
 {
@@ -71,22 +73,26 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN puk = null;
 	private byte[] TOKEN_LABEL;
 	private DH dh;
+	private RandomData nonce;
 	private final AESKey Kenc;
+	private final Cipher aesCipher;
 
 	public
 	CryptoKey()
 	{
+		
+		
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
+		
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
-
 		appletState = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
-
-		dh = new DH();
-		dh.init();
 		
+		dh = new DH();
+		nonce = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 		Kenc = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES_TRANSIENT_RESET, KeyBuilder.LENGTH_AES_128, false);
+		aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
 
 		appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_CREATION;
 	}
@@ -361,25 +367,68 @@ public class CryptoKey extends Applet implements ISO7816
 	private void
 	openSecureMessagingSession(APDU apdu)
 	{
+		short cdataOff = 0, lc = 0;
 		byte[] buf = apdu.getBuffer();
 		short p1p2  = (short)((short)buf[ISO7816.OFFSET_P1] << (short)8);
 		      p1p2 |= (short)((short)buf[ISO7816.OFFSET_P2] & (short)0x00FF);
 		
+		if (p1p2 == (short)0x0001 || p1p2 == (short)0x0002) {
+			lc = apdu.setIncomingAndReceive();
+			if (lc != apdu.getIncomingLength() || lc == (byte)0x00) {
+				appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
+				ISOException.throwIt(SW_WRONG_LENGTH);
+			}
+
+			if (p1p2 == (short)0x0001 && lc != DH.maxLength) {
+				appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
+				ISOException.throwIt(SW_WRONG_LENGTH);
+			}
+
+			cdataOff = apdu.getOffsetCdata();
+		}
+
 		switch (p1p2) {
 			case (short)0x0000:	// GET Y (Card's public key)
-				// dh.init();
+
 				dh.getY(buf, (short)0);
 				apdu.setOutgoingAndSend((short)0, DH.maxLength);
 			break;
 			case (short)0x0001:	// SET Y (Host's public key) and derive session keys 
-				dh.setY(buf, ISO7816.OFFSET_CDATA, DH.maxLength, (short) 0);
-				dh.deriveSessionKeys(Kenc);
-				appletState[APPLET_STATE_OFFSET_SM] = SM_STATE_ESTABLISHED;
+				
+				// TODO: the length of incoming data is 256 bytes long.
+				// to accept them all this function must be called multiple times
+				dh.setY(buf, cdataOff, lc, (short) 0);
+
+				dh.deriveSessionKey(Kenc);
+				nonce.generateData(dh.Y, (short)0, (short)16);
+
+				// initialize the session key.
+				// NOTE: does this method stress the FLASH?
+				aesCipher.init(Kenc, Cipher.MODE_ENCRYPT);
+                // produce checksum
+				aesCipher.doFinal(dh.Y, (short) 0, (short)16, dh.Y, (short)16);
+				
+				// Send the nonce to the host
+				Util.arrayCopyNonAtomic(dh.Y, (short)0, buf, (short)0, (short)16);
+				apdu.setOutgoingAndSend((short)0, (short)16);
+
+			break;
+			case (short)0x0002: // Verify and establish SM session.
+
+				if (Util.arrayCompare(buf, cdataOff, dh.Y, (short)0, (short)16) == 0) {
+					appletState[APPLET_STATE_OFFSET_SM] = SM_STATE_ESTABLISHED;
+				} else {
+					appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
+					ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+				}
 			break;
 			case (short)0xFFFF: // Reset SM session
 				appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
-			default:
+			break;
+			default: {
+				appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
 				ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+			}
 		}
 	}
 
