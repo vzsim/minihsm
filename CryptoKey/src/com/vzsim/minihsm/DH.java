@@ -35,7 +35,6 @@ import javacard.framework.JCSystem;
 import javacard.framework.TransactionException;
 import javacard.security.AESKey;
 import javacard.security.KeyBuilder;
-import javacard.security.KeyPair;
 import javacard.security.RSAPrivateKey;
 import javacardx.crypto.Cipher;
 import javacardx.framework.util.ArrayLogic;
@@ -152,7 +151,6 @@ public class DH {
 	};
 
 	private Cipher dhCipher;
-	private KeyPair dhKeyPair;
 	private RSAPrivateKey dhPrivKey;
 
 	protected byte[] Y;
@@ -160,25 +158,17 @@ public class DH {
 
 	public DH() {
 
-		// Creates an RSA cipher instance
-		dhCipher = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
-
-		// Create a keypair instance using an RSA keypair as template
-		dhKeyPair = new KeyPair(KeyPair.ALG_RSA, KeyBuilder.LENGTH_RSA_2048);
-
-		// Gen DH private key
-		dhKeyPair.genKeyPair();
-		dhPrivKey = (RSAPrivateKey) dhKeyPair.getPrivate();
-		
 		Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
 		S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
-
 		// Set default G to 2
 		G[(short) (maxLength - 1)] = (byte) 0x02;
 
+		dhPrivKey = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, KeyBuilder.LENGTH_RSA_2048, false);
 		// Load DH's P as RSA's M
 		dhPrivKey.setModulus(P, (short) 0, maxLength);
 
+		// Creates an RSA cipher instance
+		dhCipher = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
 		// Set private key into cipher
 		dhCipher.init(dhPrivKey, Cipher.MODE_DECRYPT);
 	}

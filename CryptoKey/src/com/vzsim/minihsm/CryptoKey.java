@@ -403,7 +403,7 @@ public class CryptoKey extends Applet implements ISO7816
 				nonce.generateData(dh.Y, (short)0, (short)16);
 
 				// initialize the session key.
-				// NOTE: does this method stress the FLASH?
+				// TODO: this method DOES stress the FLASH. fix it.
 				aesCipher.init(Kenc, Cipher.MODE_ENCRYPT);
                 // produce checksum
 				aesCipher.doFinal(dh.Y, (short) 0, (short)16, dh.Y, (short)16);
