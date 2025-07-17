@@ -158,8 +158,8 @@ public class DH {
 
 	public DH() {
 
-		Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
-		S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_RESET);
+		Y = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_DESELECT);
+		S = JCSystem.makeTransientByteArray(maxLength, JCSystem.CLEAR_ON_DESELECT);
 		// Set default G to 2
 		G[(short) (maxLength - 1)] = (byte) 0x02;
 
