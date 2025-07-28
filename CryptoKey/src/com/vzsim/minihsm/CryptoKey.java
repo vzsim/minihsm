@@ -78,7 +78,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private KeyPair ecF2MPair             = null;
 	private ECPrivateKey ecF2MprivKey     = null;
 	private ECPublicKey  ecF2MpubKey      = null;
-	private KeyAgreement ecSvdpDhKeyAgrmt = null;
+	// private KeyAgreement ecSvdpDhKeyAgrmt = null;
 	private byte[] sharedSecret             = null;
 
 	public
@@ -87,11 +87,11 @@ public class CryptoKey extends Applet implements ISO7816
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-		ecF2MPair = new KeyPair(KeyPair.ALG_EC_F2M, KeyBuilder.LENGTH_EC_F2M_163);
-		ecF2MPair.genKeyPair();
+		ecF2MPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
+		// ecF2MPair.genKeyPair();
 		
-		ecF2MprivKey = (ECPrivateKey)ecF2MPair.getPrivate();
-		ecF2MpubKey  = (ECPublicKey)ecF2MPair.getPublic();
+		// ecF2MprivKey = (ECPrivateKey)ecF2MPair.getPrivate();
+		// ecF2MpubKey  = (ECPublicKey)ecF2MPair.getPublic();
 
 		/*
 			KeyAgreement.ALG_EC_SVDP_DH
@@ -102,8 +102,8 @@ public class CryptoKey extends Applet implements ISO7816
 			KeyAgreement.ALG_EC_SVDP_DHC_KDF
 			KeyAgreement.ALG_EC_SVDP_DHC_PLAIN
 		 */
-		ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		ecSvdpDhKeyAgrmt.init(ecF2MprivKey);
+		// ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+		// ecSvdpDhKeyAgrmt.init(ecF2MprivKey);
 		sharedSecret = JCSystem.makeTransientByteArray((short)20, JCSystem.CLEAR_ON_DESELECT);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
@@ -392,11 +392,11 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		cdataOff = apdu.getOffsetCdata();
 
-		lc = ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, lc, sharedSecret, (short)0);
-		offset = Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, offset, lc);
+		// lc = ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, lc, sharedSecret, (short)0);
+		// offset = Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, offset, lc);
 
-		lc += ecF2MpubKey.getW(buf, offset);
-		apdu.setOutgoingAndSend((short)0, lc);
+		// lc += ecF2MpubKey.getW(buf, offset);
+		// apdu.setOutgoingAndSend((short)0, lc);
 	}
 
 	/**
