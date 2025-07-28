@@ -90,11 +90,7 @@ public class CryptoKey extends Applet implements ISO7816
 		// On real card the following types of key leads to failure.
 		// LENGTH_EC_FP_112 - Failed.
 		// 
-		ecFPPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_521);
-		ecFPPair.genKeyPair();
-		
-		// ecFPprivKey = (ECPrivateKey)ecF2MPair.getPrivate();
-		// ecFPpubKey  = (ECPublicKey)ecF2MPair.getPublic();
+		ecFPPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
 
 		/*
 			the following algorithms are supported by JavaCard 3.0.4:
@@ -230,6 +226,10 @@ public class CryptoKey extends Applet implements ISO7816
 				pin.update(buff, off, (byte)len);
 				pin.resetAndUnblock();
 
+				ecFPPair.genKeyPair();
+				ecFPprivKey = (ECPrivateKey)ecFPPair.getPrivate();
+				ecFPpubKey  = (ECPublicKey)ecFPPair.getPublic();
+				
 				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_ACTIVATED;
 				
 			} break;
