@@ -76,10 +76,10 @@ public class CryptoKey extends Applet implements ISO7816
 	private byte[]   TOKEN_LABEL = null;
 
 	private KeyPair ecF2MPair             = null;
-	private ECPrivateKey ecF2MprivKey     = null;
-	private ECPublicKey  ecF2MpubKey      = null;
-	// private KeyAgreement ecSvdpDhKeyAgrmt = null;
-	private byte[] sharedSecret             = null;
+	private ECPrivateKey ecFPprivKey      = null;
+	private ECPublicKey  ecFPpubKey       = null;
+	private KeyAgreement ecSvdpDhKeyAgrmt = null;
+	private byte[] sharedSecret           = null;
 
 	public
 	CryptoKey()
@@ -88,12 +88,13 @@ public class CryptoKey extends Applet implements ISO7816
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
 		ecF2MPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
-		// ecF2MPair.genKeyPair();
+		ecF2MPair.genKeyPair();
 		
-		// ecF2MprivKey = (ECPrivateKey)ecF2MPair.getPrivate();
-		// ecF2MpubKey  = (ECPublicKey)ecF2MPair.getPublic();
+		ecFPprivKey = (ECPrivateKey)ecF2MPair.getPrivate();
+		ecFPpubKey  = (ECPublicKey)ecF2MPair.getPublic();
 
 		/*
+			the following algorithms are supported by JavaCard 3.0.4:
 			KeyAgreement.ALG_EC_SVDP_DH
 			KeyAgreement.ALG_EC_SVDP_DH_KDF
 			KeyAgreement.ALG_EC_SVDP_DH_PLAIN
@@ -102,8 +103,8 @@ public class CryptoKey extends Applet implements ISO7816
 			KeyAgreement.ALG_EC_SVDP_DHC_KDF
 			KeyAgreement.ALG_EC_SVDP_DHC_PLAIN
 		 */
-		// ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		// ecSvdpDhKeyAgrmt.init(ecF2MprivKey);
+		ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+		ecSvdpDhKeyAgrmt.init(ecFPprivKey);
 		sharedSecret = JCSystem.makeTransientByteArray((short)20, JCSystem.CLEAR_ON_DESELECT);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
@@ -392,11 +393,11 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		cdataOff = apdu.getOffsetCdata();
 
-		// lc = ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, lc, sharedSecret, (short)0);
-		// offset = Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, offset, lc);
+		lc = ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, lc, sharedSecret, (short)0);
+		offset = Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, offset, lc);
 
-		// lc += ecF2MpubKey.getW(buf, offset);
-		// apdu.setOutgoingAndSend((short)0, lc);
+		lc += ecFPpubKey.getW(buf, offset);
+		apdu.setOutgoingAndSend((short)0, lc);
 	}
 
 	/**
