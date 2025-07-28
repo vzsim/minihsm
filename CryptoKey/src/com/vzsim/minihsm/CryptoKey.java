@@ -384,20 +384,42 @@ public class CryptoKey extends Applet implements ISO7816
 	private void
 	openSecureMessagingSession(APDU apdu)
 	{
-		short cdataOff = 0, lc = 0, offset = 0;
+		short le = 0, offset = 0;
+		byte p1 = 0;
 		byte[] buf = apdu.getBuffer();
-		
-		lc = apdu.setIncomingAndReceive();
-		if ((lc != apdu.getIncomingLength()) || (lc != (short)20)) {
-			ISOException.throwIt(SW_WRONG_LENGTH);
+		p1 = buf[OFFSET_P1];
+
+		switch (p1) {
+			case (byte)0x00:	//  the public key in plain text form.
+				le = ecFPpubKey.getW(buf, (short)(offset + (short)1));
+				buf[offset] = (byte)le;
+			break;
+			case (byte)0x01:	// the first coefficient of the curve of the key (A)
+				le = ecFPpubKey.getA(buf, (short)(offset + (short)1));
+				buf[offset] = (byte)le;
+			break;
+			case (byte)0x02:	// the second coefficient of the curve of the key (B)
+				le = ecFPpubKey.getB(buf, (short)(offset + (short)1));
+				buf[offset] = (byte)le;
+			break;
+			case (byte)0x03:	// the field specification parameter value of the key
+				le = ecFPpubKey.getField(buf, (short)(offset + (short)1));
+				buf[offset] = (byte)le;
+			break;
+			case (byte)0x04:	// the fixed point of the curve (G)
+				le = ecFPpubKey.getG(buf, (short)(offset + (short)1));
+				buf[offset] = (byte)le;
+			break;
+			case (byte)0x05:	// the cofactor of the order of the fixed point G of the curve (K)
+				Util.setShort(buf, (short)0, ecFPpubKey.getK());
+				le = 1;
+			break;
+			case (byte)0x06:	// the order of the fixed point G of the curve (R).
+				le = ecFPpubKey.getR(buf, (short)(offset + (short)1));
+				buf[offset] = (byte)le;
+			break;
 		}
-		cdataOff = apdu.getOffsetCdata();
-
-		lc = ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, lc, sharedSecret, (short)0);
-		offset = Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, offset, lc);
-
-		lc += ecFPpubKey.getW(buf, offset);
-		apdu.setOutgoingAndSend((short)0, lc);
+		apdu.setOutgoingAndSend((short)0, (short)(le + (short)1));
 	}
 
 	/**

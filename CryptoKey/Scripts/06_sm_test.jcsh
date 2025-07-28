@@ -1,0 +1,61 @@
+/echo ""
+/echo "*********************"
+/echo " ESTABLISH SECURE MESSAGING "
+/echo "*********************"
+/echo ""
+
+/echo "SELECT IsoApplet"
+/select A00000000101
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+
+/echo ""
+/echo "GET PLAIN PUBLIC KEY"
+/send 00800000
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "GET A"
+/send 00800100
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "GET B"
+/send 00800200
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "GET FIELD SPECIFICATION PARAMETERS"
+/send 00800300
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "GET G"
+/send 00800400
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "GET K"
+/send 00800500
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
+
+/echo ""
+/echo "GET R"
+/send 00800600
+if ${last.response.status} != 9000
+	/error "Expected SW 9000 but got ${last.response.status}"
+end
