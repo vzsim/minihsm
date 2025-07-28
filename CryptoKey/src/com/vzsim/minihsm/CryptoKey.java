@@ -75,7 +75,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN puk         = null;
 	private byte[]   TOKEN_LABEL = null;
 
-	private KeyPair ecF2MPair             = null;
+	private KeyPair ecFPPair             = null;
 	private ECPrivateKey ecFPprivKey      = null;
 	private ECPublicKey  ecFPpubKey       = null;
 	private KeyAgreement ecSvdpDhKeyAgrmt = null;
@@ -87,11 +87,14 @@ public class CryptoKey extends Applet implements ISO7816
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-		ecF2MPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
-		ecF2MPair.genKeyPair();
+		// On real card the following types of key leads to failure.
+		// LENGTH_EC_FP_112 - Failed.
+		// 
+		ecFPPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_521);
+		ecFPPair.genKeyPair();
 		
-		ecFPprivKey = (ECPrivateKey)ecF2MPair.getPrivate();
-		ecFPpubKey  = (ECPublicKey)ecF2MPair.getPublic();
+		// ecFPprivKey = (ECPrivateKey)ecF2MPair.getPrivate();
+		// ecFPpubKey  = (ECPublicKey)ecF2MPair.getPublic();
 
 		/*
 			the following algorithms are supported by JavaCard 3.0.4:
@@ -104,7 +107,7 @@ public class CryptoKey extends Applet implements ISO7816
 			KeyAgreement.ALG_EC_SVDP_DHC_PLAIN
 		 */
 		ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		ecSvdpDhKeyAgrmt.init(ecFPprivKey);
+		// ecSvdpDhKeyAgrmt.init(ecFPprivKey);
 		sharedSecret = JCSystem.makeTransientByteArray((short)20, JCSystem.CLEAR_ON_DESELECT);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
@@ -388,7 +391,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p1 = 0;
 		byte[] buf = apdu.getBuffer();
 		p1 = buf[OFFSET_P1];
-
+/*
 		switch (p1) {
 			case (byte)0x00:	//  the public key in plain text form.
 				le = ecFPpubKey.getW(buf, (short)(offset + (short)1));
@@ -420,6 +423,7 @@ public class CryptoKey extends Applet implements ISO7816
 			break;
 		}
 		apdu.setOutgoingAndSend((short)0, (short)(le + (short)1));
+*/
 	}
 
 	/**
