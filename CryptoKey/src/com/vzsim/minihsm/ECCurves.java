@@ -44,7 +44,7 @@ public final class ECCurves {
      * @param keyLength
      * @return
      */
-    @SuppressWarnings("deprecation")
+//    @SuppressWarnings("deprecation")
 	public static KeyPair getKeyPair(byte nEccCurve) {
         EcCurvesBase obj = null;
 

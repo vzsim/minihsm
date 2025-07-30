@@ -4,3 +4,8 @@ bin/
 pkcs11-tool.txt
 *.log
 .DS_Store
+CryptoKey/.jcop
+CryptoKey/.project
+CryptoKey/.classpath
+CryptoKey/.settings/org.eclipse.jdt.core.prefs
+CryptoKey/.DS_Store
