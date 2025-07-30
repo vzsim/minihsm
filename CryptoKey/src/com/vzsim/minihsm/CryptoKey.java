@@ -18,6 +18,8 @@ import javacard.security.KeyPair;
 
 public class CryptoKey extends Applet implements ISO7816
 {
+	private static final short ZERO = (short)0;
+
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
 
@@ -82,7 +84,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN puk         = null;
 	private byte[]   TOKEN_LABEL = null;
 
-	private KeyPair ecFPPair             = null;
+	private KeyPair ecFPPair;//             = null;
 	private ECPrivateKey ecFPprivKey      = null;
 	private ECPublicKey  ecFPpubKey       = null;
 	private KeyAgreement ecSvdpDhKeyAgrmt = null;
@@ -415,7 +417,7 @@ public class CryptoKey extends Applet implements ISO7816
 				}
 				cdataOff = apdu.getOffsetCdata();
 
-				ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, (short)32, sharedSecret, (short)0);
+				ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, (short)32, sharedSecret, ZERO);
 				Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, (short)0, (short)20);
 				apdu.setOutgoingAndSend((short)0, (short)20);
 			break;
