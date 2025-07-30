@@ -1,4 +1,5 @@
 build/
+bin/
 .vscode/
 pkcs11-tool.txt
 *.log
