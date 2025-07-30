@@ -8,6 +8,7 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
+import javacard.security.CryptoException;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
@@ -19,6 +20,13 @@ public class CryptoKey extends Applet implements ISO7816
 {
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
+
+	private static final short SW_CRYPTO_UNKNOWN           = (short)0x6600;
+	private static final short SW_CRYPTO_ILLEGAL_VALUE     = (short)0x6601;
+	private static final short SW_CRYPTO_UNINITIALIZED_KEY = (short)0x6602;
+	private static final short SW_CRYPTO_NO_SUCH_ALGORITHM = (short)0x6603;
+	private static final short SW_CRYPTO_INVALID_INIT      = (short)0x6604;
+	private static final short SW_CRYPTO_ILLEGAL_USE       = (short)0x6605;
 
 	/* Constant values */
 	private static final byte INS_VERIFY                = (byte)0x20;
@@ -33,8 +41,6 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte PIN_MAX_LENGTH            = (byte)0x10;
 	
 	private static final short APPLET_STATE_OFFSET_SM   = (short)0x01;
-	private static final short APPLET_STATE_OFFSET_LCS  = (short)0x00;
-	
 	private static final byte SM_STATE_ESTABLISHED      = (byte)0xA5;
 
 	/** No restrictions */
@@ -70,6 +76,7 @@ public class CryptoKey extends Applet implements ISO7816
 		(byte)0x08, (byte)'3', (byte)'1', (byte)'1', (byte)'2',(byte)'1', (byte)'9', (byte)'8', (byte)'5'
 	};
 
+	private byte     LCS         = 0;
 	private byte[]   appletState = null;
 	private OwnerPIN pin         = null;
 	private OwnerPIN puk         = null;
@@ -87,29 +94,15 @@ public class CryptoKey extends Applet implements ISO7816
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-		// On real card the following types of key leads to failure.
-		// LENGTH_EC_FP_112 - Failed.
-		// 
-		ecFPPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
 
-		/*
-			the following algorithms are supported by JavaCard 3.0.4:
-			KeyAgreement.ALG_EC_SVDP_DH
-			KeyAgreement.ALG_EC_SVDP_DH_KDF
-			KeyAgreement.ALG_EC_SVDP_DH_PLAIN
-			
-			KeyAgreement.ALG_EC_SVDP_DHC
-			KeyAgreement.ALG_EC_SVDP_DHC_KDF
-			KeyAgreement.ALG_EC_SVDP_DHC_PLAIN
-		 */
+		ecFPPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
 		ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		// ecSvdpDhKeyAgrmt.init(ecFPprivKey);
 		sharedSecret = JCSystem.makeTransientByteArray((short)20, JCSystem.CLEAR_ON_DESELECT);
 		TOKEN_LABEL = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
 		appletState = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
 
-		appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_CREATION;
+		LCS = APP_STATE_CREATION;
 		appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
 	}
 
@@ -130,7 +123,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte[] buff = apdu.getBuffer();
 		byte ins = buff[OFFSET_INS];
 
-		if (appletState[APPLET_STATE_OFFSET_LCS] == APP_STATE_TERMINATED) {
+		if (LCS == APP_STATE_TERMINATED) {
 			ISOException.throwIt((short)(SW_UNKNOWN | APP_STATE_TERMINATED));
 		}
 		
@@ -156,7 +149,19 @@ public class CryptoKey extends Applet implements ISO7816
 				}
 			}
 		} catch (ArrayIndexOutOfBoundsException e) {
-			ISOException.throwIt(SW_DATA_INVALID);
+			ISOException.throwIt(SW_ARRAY_INDEX_OUT_OF_RANGE);
+		}
+		catch (CryptoException e) {
+			short reason = e.getReason();
+
+			switch (reason) {
+				case (short)1: ISOException.throwIt(SW_CRYPTO_ILLEGAL_VALUE);     break;
+				case (short)2: ISOException.throwIt(SW_CRYPTO_UNINITIALIZED_KEY); break;
+				case (short)3: ISOException.throwIt(SW_CRYPTO_NO_SUCH_ALGORITHM); break;
+				case (short)4: ISOException.throwIt(SW_CRYPTO_INVALID_INIT);      break;
+				case (short)5: ISOException.throwIt(SW_CRYPTO_ILLEGAL_USE);       break;
+				default: ISOException.throwIt(SW_CRYPTO_UNKNOWN);                 break;
+			}
 		}
 	}
 
@@ -198,7 +203,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_DATA);
 		}
 		
-		switch (appletState[APPLET_STATE_OFFSET_LCS]) {
+		switch (LCS) {
 
 			case APP_STATE_CREATION: {	// Set PUK
 
@@ -214,7 +219,7 @@ public class CryptoKey extends Applet implements ISO7816
 				
 				// (off - 1) grab the length too.
 				Util.arrayCopyNonAtomic(buff, (short)(off - (short)1), TOKEN_LABEL, (short)0, (short)(len + (short)1));
-				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_INITIALIZATION;
+				LCS = APP_STATE_INITIALIZATION;
 
 			} break;
 			case APP_STATE_INITIALIZATION: {	// Set PIN
@@ -229,8 +234,9 @@ public class CryptoKey extends Applet implements ISO7816
 				ecFPPair.genKeyPair();
 				ecFPprivKey = (ECPrivateKey)ecFPPair.getPrivate();
 				ecFPpubKey  = (ECPublicKey)ecFPPair.getPublic();
-				
-				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_ACTIVATED;
+				ecSvdpDhKeyAgrmt.init(ecFPprivKey);
+
+				LCS = APP_STATE_ACTIVATED;
 				
 			} break;
 			case APP_STATE_ACTIVATED: {	// Update PIN
@@ -272,7 +278,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p2 = buff[OFFSET_P2];
 
 		short cdataOff, lc;
-		byte appState = appletState[APPLET_STATE_OFFSET_LCS];
+		byte appState = LCS;
 
 		if (appState == APP_STATE_DEACTIVATED) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
@@ -308,7 +314,7 @@ public class CryptoKey extends Applet implements ISO7816
 		if (!pin.check(buff, cdataOff, (byte)lc)) {
 
 			if (pin.getTriesRemaining() < (byte)1) {
-				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_DEACTIVATED;
+				LCS = APP_STATE_DEACTIVATED;
 			}
 
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
@@ -331,7 +337,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p2 = buff[OFFSET_P2];
 		short cdataOff, lc, len, off;
 
-		if (appletState[APPLET_STATE_OFFSET_LCS] != APP_STATE_DEACTIVATED || puk == null) {
+		if (LCS != APP_STATE_DEACTIVATED || puk == null) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
@@ -360,7 +366,7 @@ public class CryptoKey extends Applet implements ISO7816
 
 		if (!puk.check(buff, off, (byte)len)) {
 			if (puk.getTriesRemaining() < (byte)1) {
-				appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_TERMINATED;
+				LCS = APP_STATE_TERMINATED;
 			}
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | puk.getTriesRemaining()));
 		}
@@ -380,50 +386,40 @@ public class CryptoKey extends Applet implements ISO7816
 
 		// Committing commmon case for P1=0 and P1=1: reset and unblock PIN
 		pin.resetAndUnblock();
-		appletState[APPLET_STATE_OFFSET_LCS] = APP_STATE_ACTIVATED;
+		LCS = APP_STATE_ACTIVATED;
 	}
 	
 
 	private void
 	openSecureMessagingSession(APDU apdu)
 	{
-		short le = 0, offset = 0;
+		short le = 0, lc = 0, cdataOff = 0;
 		byte p1 = 0;
 		byte[] buf = apdu.getBuffer();
 		p1 = buf[OFFSET_P1];
-/*
+
+		if (LCS != APP_STATE_ACTIVATED) {
+			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
+		}
+
 		switch (p1) {
 			case (byte)0x00:	//  the public key in plain text form.
-				le = ecFPpubKey.getW(buf, (short)(offset + (short)1));
-				buf[offset] = (byte)le;
+				le = ecFPpubKey.getW(buf, (short)(cdataOff + (short)1));
+				buf[cdataOff] = (byte)le;
+				apdu.setOutgoingAndSend((short)0, (short)(le + (short)1));
 			break;
-			case (byte)0x01:	// the first coefficient of the curve of the key (A)
-				le = ecFPpubKey.getA(buf, (short)(offset + (short)1));
-				buf[offset] = (byte)le;
-			break;
-			case (byte)0x02:	// the second coefficient of the curve of the key (B)
-				le = ecFPpubKey.getB(buf, (short)(offset + (short)1));
-				buf[offset] = (byte)le;
-			break;
-			case (byte)0x03:	// the field specification parameter value of the key
-				le = ecFPpubKey.getField(buf, (short)(offset + (short)1));
-				buf[offset] = (byte)le;
-			break;
-			case (byte)0x04:	// the fixed point of the curve (G)
-				le = ecFPpubKey.getG(buf, (short)(offset + (short)1));
-				buf[offset] = (byte)le;
-			break;
-			case (byte)0x05:	// the cofactor of the order of the fixed point G of the curve (K)
-				Util.setShort(buf, (short)0, ecFPpubKey.getK());
-				le = 1;
-			break;
-			case (byte)0x06:	// the order of the fixed point G of the curve (R).
-				le = ecFPpubKey.getR(buf, (short)(offset + (short)1));
-				buf[offset] = (byte)le;
+			case (byte)0x01:	// Generate shared secret
+				lc = apdu.setIncomingAndReceive();
+				if (lc != apdu.getIncomingLength() || lc != 32) {
+					ISOException.throwIt(SW_WRONG_LENGTH);
+				}
+				cdataOff = apdu.getOffsetCdata();
+
+				ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, (short)32, sharedSecret, (short)0);
+				Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, (short)0, (short)20);
+				apdu.setOutgoingAndSend((short)0, (short)20);
 			break;
 		}
-		apdu.setOutgoingAndSend((short)0, (short)(le + (short)1));
-*/
 	}
 
 	/**
@@ -442,7 +438,7 @@ public class CryptoKey extends Applet implements ISO7816
 
 		switch (p1p2) {
 			case (short)0x00FF: {
-				buf[offset++] = appletState[APPLET_STATE_OFFSET_LCS];
+				buf[offset++] = LCS;
 				buf[offset++] = API_VERSION_MAJOR;
 				buf[offset++] = API_VERSION_MINOR;
 				buf[offset++] = PIN_MIN_LENGTH;
