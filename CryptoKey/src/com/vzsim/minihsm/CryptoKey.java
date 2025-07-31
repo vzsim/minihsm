@@ -24,11 +24,6 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
 
 	private static final short SW_CRYPTO_UNKNOWN           = (short)0x6600;
-	private static final short SW_CRYPTO_ILLEGAL_VALUE     = (short)0x6601;
-	private static final short SW_CRYPTO_UNINITIALIZED_KEY = (short)0x6602;
-	private static final short SW_CRYPTO_NO_SUCH_ALGORITHM = (short)0x6603;
-	private static final short SW_CRYPTO_INVALID_INIT      = (short)0x6604;
-	private static final short SW_CRYPTO_ILLEGAL_USE       = (short)0x6605;
 
 	/* Constant values */
 	private static final byte INS_VERIFY                = (byte)0x20;
@@ -155,14 +150,10 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		catch (CryptoException e) {
 			short reason = e.getReason();
-
-			switch (reason) {
-				case (short)1: ISOException.throwIt(SW_CRYPTO_ILLEGAL_VALUE);     break;
-				case (short)2: ISOException.throwIt(SW_CRYPTO_UNINITIALIZED_KEY); break;
-				case (short)3: ISOException.throwIt(SW_CRYPTO_NO_SUCH_ALGORITHM); break;
-				case (short)4: ISOException.throwIt(SW_CRYPTO_INVALID_INIT);      break;
-				case (short)5: ISOException.throwIt(SW_CRYPTO_ILLEGAL_USE);       break;
-				default: ISOException.throwIt(SW_CRYPTO_UNKNOWN);                 break;
+			if ( (reason > (short)0) && (reason < (short)6)) {
+				ISOException.throwIt((short)(SW_CRYPTO_UNKNOWN | reason));
+			} else {
+				ISOException.throwIt(SW_CRYPTO_UNKNOWN);
 			}
 		}
 	}
