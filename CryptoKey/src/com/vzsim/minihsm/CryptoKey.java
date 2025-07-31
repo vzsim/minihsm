@@ -65,7 +65,8 @@ public class CryptoKey extends Applet implements ISO7816
 
 	/** "InterGalaxy" */
 	private static final byte[] MANUFACTURER = {
-		(byte)0x0B, (byte)'I', (byte)'n', (byte)'t', (byte)'e', (byte)'r', (byte)'G', (byte)'a', (byte)'l', (byte)'a', (byte)'x', (byte)'y'
+		(byte)0x0B,
+		(byte)'I', (byte)'n', (byte)'t', (byte)'e', (byte)'r', (byte)'G', (byte)'a', (byte)'l', (byte)'a', (byte)'x', (byte)'y'
 	};
 	
 	/** "MiniHSM" */
@@ -84,14 +85,13 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN puk         = null;
 	private byte[]   TOKEN_LABEL = null;
 
-	private KeyPair ecFPPair;//             = null;
-	private ECPrivateKey ecFPprivKey      = null;
-	private ECPublicKey  ecFPpubKey       = null;
+	private KeyPair ecFPPair;
+	private ECPrivateKey ecFPprivKey;
+	private ECPublicKey  ecFPpubKey;
 	private KeyAgreement ecSvdpDhKeyAgrmt = null;
 	private byte[] sharedSecret           = null;
 
-	public
-	CryptoKey()
+	public CryptoKey()
 	{
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
