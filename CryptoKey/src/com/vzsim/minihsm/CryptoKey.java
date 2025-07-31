@@ -65,18 +65,20 @@ public class CryptoKey extends Applet implements ISO7816
 
 	/** "InterGalaxy" */
 	private static final byte[] MANUFACTURER = {
-		(byte)0x0B,
+		(byte)11,
 		(byte)'I', (byte)'n', (byte)'t', (byte)'e', (byte)'r', (byte)'G', (byte)'a', (byte)'l', (byte)'a', (byte)'x', (byte)'y'
 	};
 	
 	/** "MiniHSM" */
 	private static final byte[] MODEL = {
-		(byte)0x04, (byte)'e', (byte)'S', (byte)'I', (byte)'M'
+		(byte)4,
+		(byte)'e', (byte)'S', (byte)'I', (byte)'M'
 	};
 
 	/** 31121985 */
 	private static final byte[] SERIAL_NUMBER = {
-		(byte)0x08, (byte)'3', (byte)'1', (byte)'1', (byte)'2',(byte)'1', (byte)'9', (byte)'8', (byte)'5'
+		(byte)8,
+		(byte)'3', (byte)'1', (byte)'1', (byte)'2',(byte)'1', (byte)'9', (byte)'8', (byte)'5'
 	};
 
 	private byte     LCS         = 0;
@@ -85,11 +87,11 @@ public class CryptoKey extends Applet implements ISO7816
 	private OwnerPIN puk         = null;
 	private byte[]   TOKEN_LABEL = null;
 
-	private KeyPair ecFPPair;
+	private KeyPair      ecFPPair;
 	private ECPrivateKey ecFPprivKey;
 	private ECPublicKey  ecFPpubKey;
-	private KeyAgreement ecSvdpDhKeyAgrmt = null;
-	private byte[] sharedSecret           = null;
+	private KeyAgreement ecSvdpDhKeyAgrmt;
+	private byte[]       sharedSecret;
 
 	public CryptoKey()
 	{
@@ -97,25 +99,23 @@ public class CryptoKey extends Applet implements ISO7816
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
 
-		ecFPPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
+		ecFPPair         = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
+		TOKEN_LABEL      = new byte[33];
+		TOKEN_LABEL[0]   = (byte)0;
 		ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		sharedSecret = JCSystem.makeTransientByteArray((short)20, JCSystem.CLEAR_ON_DESELECT);
-		TOKEN_LABEL = new byte[33];
-		TOKEN_LABEL[0] = (byte)0;
-		appletState = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
+		sharedSecret     = JCSystem.makeTransientByteArray((short)20, JCSystem.CLEAR_ON_DESELECT);
+		appletState      = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
 
 		LCS = APP_STATE_CREATION;
 		appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
 	}
 
-	public static void
-	install(byte[] bArray, short bOffset, byte bLength)
+	public static void install(byte[] bArray, short bOffset, byte bLength)
 	{
 		new CryptoKey().register();
 	}
 	
-	public void
-	process(APDU apdu) throws ISOException
+	public void	process(APDU apdu) throws ISOException
 	{
 		if (selectingApplet()) {
 			appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
@@ -181,8 +181,7 @@ public class CryptoKey extends Applet implements ISO7816
 	 * APP_STATE_ACTIVATED			[81 Len <CURR PIN bytes> 82 Len <NEW PIN bytes>]
 	 * @param apdu
 	 */
-	private void
-	changeReferenceData(APDU apdu)
+	private void changeReferenceData(APDU apdu)
 	{
 		byte[] buff = apdu.getBuffer();
 		byte p1 = buff[OFFSET_P1];
@@ -272,8 +271,7 @@ public class CryptoKey extends Applet implements ISO7816
 	 * VERIFY (INS 0X20), ISO 7816-4, clause 11.5.6.
 	 * @param apdu
 	 */
-	private void
-	verify(APDU apdu)
+	private void verify(APDU apdu)
 	{
 		byte[] buff = apdu.getBuffer();
 		byte p1 = buff[OFFSET_P1];
@@ -331,8 +329,7 @@ public class CryptoKey extends Applet implements ISO7816
 	 * P3 == 3 CDATA: absent						 // get PUK remaining tries
 	 * @param apdu
 	 */
-	private void
-	resetRetryCounter(APDU apdu)
+	private void resetRetryCounter(APDU apdu)
 	{
 		byte[] buff = apdu.getBuffer();
 		byte p1 = buff[OFFSET_P1];
@@ -392,8 +389,7 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 	
 
-	private void
-	openSecureMessagingSession(APDU apdu)
+	private void openSecureMessagingSession(APDU apdu)
 	{
 		short le = 0, lc = 0, cdataOff = 0;
 		byte p1 = 0;
@@ -429,8 +425,7 @@ public class CryptoKey extends Applet implements ISO7816
 	 * Available values:
 	 * P1P2 == 00FF: retrieve all data
 	 */
-	private void
-	getData(APDU apdu)
+	private void getData(APDU apdu)
 	{
 		byte[] buf = apdu.getBuffer();
 		short p1p2  = (short)((short)buf[OFFSET_P1] << (short)8);
