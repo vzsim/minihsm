@@ -8,23 +8,27 @@ import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
+
 import javacard.security.CryptoException;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
-import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
-
-import com.vzsim.minihsm.ECCurves;
+import javacard.security.RandomData;
+import javacardx.crypto.Cipher;
+import javacard.security.KeyBuilder;
+import javacard.security.AESKey;
 
 public class CryptoKey extends Applet implements ISO7816
 {
 	private static final short ZERO = (short)0;
+	private static final short THIRTY_TWO = (short)32;
 
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
 
-	private static final short SW_CRYPTO_EXCEPTION      = (short)0x6600;
+	private static final short SW_CRYPTO_EXCEPTION                = (short)0x6600;
+	private static final short SW_CRYPTO_SHARED_CHECKSUM_MISMATCH = (short)0x6606;
 
 	/* Constant values */
 	private static final byte INS_VERIFY                = (byte)0x20;
@@ -86,20 +90,32 @@ public class CryptoKey extends Applet implements ISO7816
 	private KeyPair      ecFPPair;
 	private ECPrivateKey ecFPprivKey;
 	private ECPublicKey  ecFPpubKey;
-	private KeyAgreement ecSvdpDhKeyAgrmt;
+	private KeyAgreement ecDhPlain;
 	private byte[]       sharedSecret;
+
+	private AESKey aesEphem;
+	private Cipher aesENC;
+	private Cipher aesDEC;
+
+	private RandomData rand;
 
 	public CryptoKey()
 	{
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-		ecFPPair         = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
-		TOKEN_LABEL      = new byte[33];
-		TOKEN_LABEL[0]   = (byte)0;
-		ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		sharedSecret     = JCSystem.makeTransientByteArray((short)32, JCSystem.CLEAR_ON_DESELECT);
-		appletState      = JCSystem.makeTransientByteArray((short)1, JCSystem.CLEAR_ON_DESELECT);
+		// ecFPPair         = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
+		ecFPPair       = ECCurves.getKeyPair(ECCurves.EC_SecP256k1);
+		TOKEN_LABEL    = new byte[33];
+		TOKEN_LABEL[0] = (byte)0;
+		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
+		sharedSecret   = JCSystem.makeTransientByteArray(THIRTY_TWO, JCSystem.CLEAR_ON_DESELECT);
+		aesEphem       = (AESKey)KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
+		aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		aesDEC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
+
+		appletState    = JCSystem.makeTransientByteArray((short)1, JCSystem.CLEAR_ON_DESELECT);
 
 		LCS = APP_STATE_CREATION;
 		appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
@@ -120,6 +136,8 @@ public class CryptoKey extends Applet implements ISO7816
 		short le = 0, lc = 0;
 		byte[] buff    = apdu.getBuffer();
 		byte ins       = buff[OFFSET_INS];
+		byte p1        = buff[OFFSET_P1];
+
 		short cdataOff = apdu.getOffsetCdata();
 
 		if (LCS == APP_STATE_TERMINATED) {
@@ -127,7 +145,7 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		
 		try {
-			if (isCase1Case2Command(ins)) {
+			if (isCase3Case4Command((short)((short)ins << (short)8 | (short)p1 & (short)0x00FF))) {
 				lc = apdu.setIncomingAndReceive();
 				if (lc != apdu.getIncomingLength()) {
 					ISOException.throwIt(SW_WRONG_LENGTH);
@@ -176,8 +194,8 @@ public class CryptoKey extends Applet implements ISO7816
 	 * This method handles the following data at specific Life cycle states:
 	 * 
 	 * LCS							CDATA
-	 * APP_STATE_CREATION			[81 Len <Initial PUK bytes>]
-	 * APP_STATE_INITIALIZATION		[81 Len <Initial PIN bytes>]
+	 * APP_STATE_CREATION			[81 Len <Initial PUK bytes>] or absent
+	 * APP_STATE_INITIALIZATION		[81 Len <Initial PIN bytes>] or absent
 	 * APP_STATE_ACTIVATED			[81 Len <CURR PIN bytes> 82 Len <NEW PIN bytes>]
 	 * @param apdu
 	 */
@@ -229,7 +247,7 @@ public class CryptoKey extends Applet implements ISO7816
 				ecFPPair.genKeyPair();
 				ecFPprivKey = (ECPrivateKey)ecFPPair.getPrivate();
 				ecFPpubKey  = (ECPublicKey)ecFPPair.getPublic();
-				ecSvdpDhKeyAgrmt.init(ecFPprivKey);
+				ecDhPlain.init(ecFPprivKey);
 
 				LCS = APP_STATE_ACTIVATED;
 				
@@ -372,7 +390,7 @@ public class CryptoKey extends Applet implements ISO7816
 	
 
 	/**
-	 * Generate shared secret.
+	 * GENERATE SHARED SECRET (INS 0X80).
 	 * 
 	 * This method should be called twice: the first time it accepts an incoming APDU
 	 * containing a public key of the host which is used to generate the shared secret.
@@ -387,25 +405,40 @@ public class CryptoKey extends Applet implements ISO7816
 
 		p1 = buff[OFFSET_P1];
 
-		if (lc != 32) {
-			ISOException.throwIt(SW_WRONG_LENGTH);
-		}
-
 		if (LCS != APP_STATE_ACTIVATED) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 		
+		if ((p1 == ZERO       && lc != THIRTY_TWO)
+		 || (p1 == (byte)0x02 && lc != (short)16)) {
+			ISOException.throwIt(SW_WRONG_LENGTH);
+		}
+
 		switch (p1) {
-			case (byte)0x00: //  generate shared secret
+			case (byte)0x00: // generate shared secret
 				
-				ecSvdpDhKeyAgrmt.generateSecret(buff, cdataOff, (short)32, sharedSecret, ZERO);
-				
-				// get the public key in plain text form.
-				le = ecFPpubKey.getW(buff, (short)(cdataOff + (short)1));
-				buff[cdataOff] = (byte)le;
-				le += 1;
+				ecDhPlain.generateSecret(buff, cdataOff, THIRTY_TWO, sharedSecret, ZERO);
+				aesEphem.setKey(sharedSecret, ZERO);
+				aesENC.init(aesEphem, Cipher.MODE_ENCRYPT);
+				aesDEC.init(aesEphem, Cipher.MODE_DECRYPT);
+
+				// prepare the public key to be sent to the host
+				le = ecFPpubKey.getW(buff, ZERO);
 			break;
-			case (byte)0x01: // verify shared
+			case (byte)0x01: // generate random
+				rand.generateData(buff, ZERO, (short)16);
+				aesENC.doFinal(buff, ZERO, (short)16, sharedSecret, ZERO);	// temporarily store the encrypted random
+
+				le = (short)16;
+			break;
+			case (byte)0x02: // verify shared
+				
+				if (Util.arrayCompare(buff, cdataOff, sharedSecret, ZERO, lc) == ZERO) {
+					appletState[APPLET_STATE_OFFSET_SM] = SM_STATE_ESTABLISHED;
+				} else {
+					ISOException.throwIt(SW_CRYPTO_SHARED_CHECKSUM_MISMATCH);
+				}
+				
 				le = ZERO;
 			break;
 		}
@@ -443,12 +476,16 @@ public class CryptoKey extends Applet implements ISO7816
 		return offset;
 	}
 
-	private boolean isCase1Case2Command(byte ins)
+	private boolean isCase3Case4Command(short cmd)
 	{
 		boolean result = false;
 
-		switch (ins) {
-			case INS_GET_DATA:
+		switch (cmd) {
+			case (short)0x2000: // verify
+			case (short)0x2500:	// change ref data
+			case (short)0x2D00: // reset retry counter
+			case (short)0x8000: // generate shared: accept host's public key.
+			case (short)0x8002: // generate shared: compare the checksum of the parties
 				result = true;
 			break;
 		}
