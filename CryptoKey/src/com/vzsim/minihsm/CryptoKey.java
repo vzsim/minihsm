@@ -15,6 +15,7 @@ import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 
+import com.vzsim.minihsm.ECCurves;
 
 public class CryptoKey extends Applet implements ISO7816
 {
@@ -23,7 +24,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
 
-	private static final short SW_CRYPTO_UNKNOWN           = (short)0x6600;
+	private static final short SW_CRYPTO_EXCEPTION      = (short)0x6600;
 
 	/* Constant values */
 	private static final byte INS_VERIFY                = (byte)0x20;
@@ -162,7 +163,7 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		catch (CryptoException e) {
 			short reason = (short)(e.getReason() & (short)0x00FF);
-			ISOException.throwIt((short)(SW_CRYPTO_UNKNOWN | reason));
+			ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | reason));
 		}
 	}
 
