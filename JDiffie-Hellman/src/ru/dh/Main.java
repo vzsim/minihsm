@@ -41,31 +41,37 @@ public class Main
 	protected static PCSC pcsc = null;
 
 	public static byte[]
-	getCardsPublicKey() throws CardException
+	sendPublicKey(byte[] alicePub) throws CardException
 	{
-		
-		ResponseAPDU r = pcsc.channel.transmit(new CommandAPDU(DiffieHellman.hexStringToBytes("00A4040006 A00000000101")));
-		r = pcsc.channel.transmit(new CommandAPDU(DiffieHellman.hexStringToBytes("0080000000")));
-		
-		byte[] cardPub = Arrays.copyOfRange(r.getBytes(), 1, r.getBytes().length);
-		cardPub = Arrays.copyOfRange(cardPub, 0, cardPub.length - 2);
+		ResponseAPDU r = pcsc.channel.transmit(new CommandAPDU(DiffieHellman.hexStringToBytes("00A4040006A00000000101")));
 
-		return cardPub;
-	}
-
-	public static byte[]
-	getCardsSessionKey(byte[] alicePub) throws CardException
-	{
-		alicePub = Arrays.copyOfRange(alicePub, 1, alicePub.length);
+		// alicePub = Arrays.copyOfRange(alicePub, 0, alicePub.length);
 		byte[] cmd = new byte[5 + alicePub.length];
-		System.arraycopy(new byte[]{(byte)0x00 ,(byte)0x80 ,(byte)0x01 ,(byte)0x00 ,(byte)alicePub.length}, 0, cmd, 0, 5);
+		
+		System.arraycopy(new byte[]{(byte)0x00 ,(byte)0x80 ,(byte)0x00 ,(byte)0x00 ,(byte)alicePub.length}, 0, cmd, 0, 5);
 		System.arraycopy(alicePub, 0, cmd, 5, alicePub.length);
 
-		ResponseAPDU response = pcsc.channel.transmit(new CommandAPDU(cmd));
+		r = pcsc.channel.transmit(new CommandAPDU(cmd));
 
-		pcsc.card.disconnect(false);
-		return response.getBytes();
+		// byte[] cardShared = Arrays.copyOfRange(r.getBytes(), 0, 32);
+		byte[] cardPubKey = Arrays.copyOfRange(r.getData(), 0, r.getData().length);
+		System.out.println("Bob's public: " + DiffieHellman.bytesToHexString(cardPubKey));
+		return cardPubKey;
 	}
+
+	// public static byte[] 02d2478256dd35557abdd97ae9ee1e98c071d7f6dcfe547c800f7faadf7d6d3828 D2478256DD35557ABDD97AE9EE1E98C071D7F6DCFE547C800F7FAADF7D6D38
+	// getCardsSessionKey(byte[] alicePub) throws CardException
+	// {
+	// 	alicePub = Arrays.copyOfRange(alicePub, 1, alicePub.length);
+	// 	byte[] cmd = new byte[5 + alicePub.length];
+	// 	System.arraycopy(new byte[]{(byte)0x00 ,(byte)0x80 ,(byte)0x01 ,(byte)0x00 ,(byte)alicePub.length}, 0, cmd, 0, 5);
+	// 	System.arraycopy(alicePub, 0, cmd, 5, alicePub.length);
+
+	// 	ResponseAPDU response = pcsc.channel.transmit(new CommandAPDU(cmd));
+
+	// 	pcsc.card.disconnect(false);
+	// 	return response.getBytes();
+	// }
 
 	public static void
 	main(String[] args) throws Exception
@@ -76,7 +82,7 @@ public class Main
 			pcsc = new PCSC();
 			pcsc.connectCard();
 
-			dh = new DiffieHellman(new BouncyCastleProvider(), "ECDH", "BC", "prime256v1");
+			dh = new DiffieHellman(new BouncyCastleProvider(), "ECDH", "BC", "secp256k1");
 			KeyPair Alice = dh.kpGen.generateKeyPair();
 			// KeyPair Bob = dh.kpGen.generateKeyPair();
 
@@ -98,10 +104,11 @@ public class Main
 			// System.out.println("Bob Public:  " + DiffieHellman.bytesToHexString(pubBob));
 			
 
-			byte[] pubBob = getCardsPublicKey();
+			byte[] pubBob = sendPublicKey(pubAlice);
+
 			dh.generateSessionKey("Alice's secret: ", prvAlice, pubBob);
-			// dh.generateSessionKey("Alice's secret: ", prvBob, pubAlice);
-			getCardsSessionKey(pubAlice);
+			
+			// getCardsSessionKey(pubAlice);
 
 			pcsc.disconnectCard();
 
@@ -159,8 +166,8 @@ class DiffieHellman
 		ka.doPhase(loadPublicKey(hisPubKey), true);
 
 		byte[] secret = ka.generateSecret();
-		MessageDigest md = MessageDigest.getInstance("SHA-1");
-		secret = md.digest(secret);
+		// MessageDigest md = MessageDigest.getInstance("SHA-1");
+		// secret = md.digest(secret);
 		System.out.println(msg + bytesToHexString(secret));
 	}
 

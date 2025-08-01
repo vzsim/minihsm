@@ -410,33 +410,34 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 		
-		if ((p1 == ZERO       && lc != THIRTY_TWO)
-		 || (p1 == (byte)0x01 && lc != SIXTEEN)) {
-			ISOException.throwIt(SW_WRONG_LENGTH);
-		}
+		// if ((p1 == ZERO       && lc != THIRTY_TWO)
+		//  || (p1 == (byte)0x01 && lc != SIXTEEN)) {
+		// 	ISOException.throwIt(SW_WRONG_LENGTH);
+		// }
 
 		switch (p1) {
 			case (byte)0x00: // generate shared secret
 				
 				// using host's public key, generate a shared secret
-				ecDhPlain.generateSecret(buff, cdataOff, THIRTY_TWO, sharedSecret, ZERO);
+				ecDhPlain.generateSecret(buff, cdataOff, (short)65, sharedSecret, ZERO);
+				le = Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, ZERO, THIRTY_TWO);
 
 				// Use the first bytes of the shared secret as AES key.
-				aesEphem.setKey(sharedSecret, ZERO);
+				// aesEphem.setKey(sharedSecret, ZERO);
 
 				// Initialize aes ciphers.
-				aesENC.init(aesEphem, Cipher.MODE_ENCRYPT);
-				aesDEC.init(aesEphem, Cipher.MODE_DECRYPT);
+				// aesENC.init(aesEphem, Cipher.MODE_ENCRYPT);
+				// aesDEC.init(aesEphem, Cipher.MODE_DECRYPT);
 
 				// prepare the public key to be sent to the host
-				le = ecFPpubKey.getW(buff, ZERO);
+				le += ecFPpubKey.getW(buff, le);
 
 				// generate a random value and send it to the host.
-				rand.generateData(buff, SIXTEEN, SIXTEEN);
-				le += SIXTEEN;
+				// rand.generateData(buff, SIXTEEN, SIXTEEN);
+				// le += SIXTEEN;
 
 				// Calculate the checksum on the random data and store it temporarily.
-				aesENC.doFinal(buff, SIXTEEN, SIXTEEN, sharedSecret, ZERO);
+				// aesENC.doFinal(buff, SIXTEEN, SIXTEEN, sharedSecret, ZERO);
 
 			break;
 			case (byte)0x01: // verify shared
@@ -491,6 +492,7 @@ public class CryptoKey extends Applet implements ISO7816
 		switch (cmd) {
 			case (short)0x2000: // verify
 			case (short)0x2500:	// change ref data
+			case (short)0x2501:	// change ref data
 			case (short)0x2D00: // reset retry counter
 			case (short)0x8000: // generate shared: accept host's public key.
 			case (short)0x8002: // generate shared: compare the checksum of the parties
