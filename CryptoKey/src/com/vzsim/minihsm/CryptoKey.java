@@ -22,6 +22,7 @@ import javacard.security.AESKey;
 public class CryptoKey extends Applet implements ISO7816
 {
 	private static final short ZERO = (short)0;
+	private static final short SIXTEEN = (short)16;
 	private static final short THIRTY_TWO = (short)32;
 
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
@@ -42,7 +43,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte PIN_MIN_LENGTH            = (byte)0x04;
 	private static final byte PIN_MAX_LENGTH            = (byte)0x10;
 	
-	private static final short APPLET_STATE_OFFSET_SM   = (short)0x01;
+	private static final short APPLET_STATE_OFFSET_SM   = (short)0x00;
 	private static final byte SM_STATE_ESTABLISHED      = (byte)0xA5;
 
 	/** No restrictions */
@@ -410,28 +411,35 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		
 		if ((p1 == ZERO       && lc != THIRTY_TWO)
-		 || (p1 == (byte)0x02 && lc != (short)16)) {
+		 || (p1 == (byte)0x01 && lc != SIXTEEN)) {
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
 
 		switch (p1) {
 			case (byte)0x00: // generate shared secret
 				
+				// using host's public key, generate a shared secret
 				ecDhPlain.generateSecret(buff, cdataOff, THIRTY_TWO, sharedSecret, ZERO);
+
+				// Use the first bytes of the shared secret as AES key.
 				aesEphem.setKey(sharedSecret, ZERO);
+
+				// Initialize aes ciphers.
 				aesENC.init(aesEphem, Cipher.MODE_ENCRYPT);
 				aesDEC.init(aesEphem, Cipher.MODE_DECRYPT);
 
 				// prepare the public key to be sent to the host
 				le = ecFPpubKey.getW(buff, ZERO);
-			break;
-			case (byte)0x01: // generate random
-				rand.generateData(buff, ZERO, (short)16);
-				aesENC.doFinal(buff, ZERO, (short)16, sharedSecret, ZERO);	// temporarily store the encrypted random
 
-				le = (short)16;
+				// generate a random value and send it to the host.
+				rand.generateData(buff, SIXTEEN, SIXTEEN);
+				le += SIXTEEN;
+
+				// Calculate the checksum on the random data and store it temporarily.
+				aesENC.doFinal(buff, SIXTEEN, SIXTEEN, sharedSecret, ZERO);
+
 			break;
-			case (byte)0x02: // verify shared
+			case (byte)0x01: // verify shared
 				
 				if (Util.arrayCompare(buff, cdataOff, sharedSecret, ZERO, lc) == ZERO) {
 					appletState[APPLET_STATE_OFFSET_SM] = SM_STATE_ESTABLISHED;

@@ -44,8 +44,8 @@ public class Main
 	getCardsPublicKey() throws CardException
 	{
 		
-		ResponseAPDU r = pcsc.channel.transmit(new CommandAPDU(new byte[]{(byte)0x00 ,(byte)0xA4 ,(byte)0x04 ,(byte)0x00 ,(byte)0x06 ,(byte)0xA0 ,(byte)0x00 ,(byte)0x00 ,(byte)0x00 ,(byte)0x01 ,(byte)0x01 ,(byte)0x00}));
-		r = pcsc.channel.transmit(new CommandAPDU(new byte[]{(byte)0x00 ,(byte)0x80 ,(byte)0x00 ,(byte)0x00 ,(byte)0x00}));
+		ResponseAPDU r = pcsc.channel.transmit(new CommandAPDU(DiffieHellman.hexStringToBytes("00A4040006 A00000000101")));
+		r = pcsc.channel.transmit(new CommandAPDU(DiffieHellman.hexStringToBytes("0080000000")));
 		
 		byte[] cardPub = Arrays.copyOfRange(r.getBytes(), 1, r.getBytes().length);
 		cardPub = Arrays.copyOfRange(cardPub, 0, cardPub.length - 2);
@@ -196,6 +196,37 @@ class DiffieHellman
 		}
 
 		return new String(hexChars);
+	}
+
+	public static byte[] hexStringToBytes(String string)
+	{
+		byte[] byteArray = new byte[string.length() / 2];
+		string  = string.toUpperCase();
+		int outBufIdx = 0;
+		int nextChar = 0;
+		char msn = '0';
+		char lsn = '0';
+		
+		try
+		{
+			while(nextChar < string.length())
+			{
+				msn = string.charAt(nextChar);
+				if (msn == ' ')
+					continue;
+				
+				nextChar++;
+				lsn = string.charAt(nextChar); nextChar++;
+				byteArray[outBufIdx] = (byte)((Character.digit(msn, 16) << 4) | (Character.digit(lsn, 16)));
+				outBufIdx++;
+			}
+		}
+		catch(StringIndexOutOfBoundsException e)
+		{
+			System.out.println(e.getMessage());
+		}
+
+		return byteArray;
 	}
 }
 
