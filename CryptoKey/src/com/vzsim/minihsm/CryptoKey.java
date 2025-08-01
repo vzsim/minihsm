@@ -76,11 +76,11 @@ public class CryptoKey extends Applet implements ISO7816
 		(byte)'3', (byte)'1', (byte)'1', (byte)'2',(byte)'1', (byte)'9', (byte)'8', (byte)'5'
 	};
 
-	private byte     LCS         = 0;
-	private byte[]   appletState = null;
-	private OwnerPIN pin         = null;
-	private OwnerPIN puk         = null;
-	private byte[]   TOKEN_LABEL = null;
+	private byte     LCS;
+	private byte[]   appletState;
+	private OwnerPIN pin;
+	private OwnerPIN puk;
+	private byte[]   TOKEN_LABEL;
 
 	private KeyPair      ecFPPair;
 	private ECPrivateKey ecFPprivKey;
@@ -93,13 +93,12 @@ public class CryptoKey extends Applet implements ISO7816
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-
 		ecFPPair         = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
 		TOKEN_LABEL      = new byte[33];
 		TOKEN_LABEL[0]   = (byte)0;
 		ecSvdpDhKeyAgrmt = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		sharedSecret     = JCSystem.makeTransientByteArray((short)20, JCSystem.CLEAR_ON_DESELECT);
-		appletState      = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
+		sharedSecret     = JCSystem.makeTransientByteArray((short)32, JCSystem.CLEAR_ON_DESELECT);
+		appletState      = JCSystem.makeTransientByteArray((short)1, JCSystem.CLEAR_ON_DESELECT);
 
 		LCS = APP_STATE_CREATION;
 		appletState[APPLET_STATE_OFFSET_SM] = ~SM_STATE_ESTABLISHED;
@@ -117,44 +116,53 @@ public class CryptoKey extends Applet implements ISO7816
 			return;
 		}
 
-		byte[] buff = apdu.getBuffer();
-		byte ins = buff[OFFSET_INS];
+		short le = 0, lc = 0;
+		byte[] buff    = apdu.getBuffer();
+		byte ins       = buff[OFFSET_INS];
+		short cdataOff = apdu.getOffsetCdata();
 
 		if (LCS == APP_STATE_TERMINATED) {
 			ISOException.throwIt((short)(SW_UNKNOWN | APP_STATE_TERMINATED));
 		}
 		
 		try {
+			if (isCase1Case2Command(ins)) {
+				lc = apdu.setIncomingAndReceive();
+				if (lc != apdu.getIncomingLength()) {
+					ISOException.throwIt(SW_WRONG_LENGTH);
+				}
+			}
+
 			switch (ins) {
 				case INS_CHANGE_REFERENCE_DATA: {
-					changeReferenceData(apdu);
+					le = changeReferenceData(buff, cdataOff, lc);
 				} break;
 				case INS_VERIFY: {
-					verify(apdu);
+					le = verify(buff, cdataOff, lc);
 				} break;
 				case INS_RESET_RETRY_COUNTER: {
-					resetRetryCounter(apdu);
+					le = resetRetryCounter(buff, cdataOff, lc);
 				} break;
 				case INS_OPEN_SM_SESSION: {
-					openSecureMessagingSession(apdu);
+					le = openSecureMessagingSession(buff, cdataOff, lc);
 				} break;
 				case INS_GET_DATA: {
-					getData(apdu);
+					le = getData(buff);
 				} break;
 				default: {
-					ISOException.throwIt(SW_ARRAY_INDEX_OUT_OF_RANGE);
+					ISOException.throwIt(SW_INS_NOT_SUPPORTED);
 				}
+			}
+
+			if (le > ZERO) {
+				apdu.setOutgoingAndSend(ZERO, le);
 			}
 		} catch (ArrayIndexOutOfBoundsException e) {
 			ISOException.throwIt(SW_ARRAY_INDEX_OUT_OF_RANGE);
 		}
 		catch (CryptoException e) {
-			short reason = e.getReason();
-			if ( (reason > (short)0) && (reason < (short)6)) {
-				ISOException.throwIt((short)(SW_CRYPTO_UNKNOWN | reason));
-			} else {
-				ISOException.throwIt(SW_CRYPTO_UNKNOWN);
-			}
+			short reason = (short)(e.getReason() & (short)0x00FF);
+			ISOException.throwIt((short)(SW_CRYPTO_UNKNOWN | reason));
 		}
 	}
 
@@ -172,21 +180,15 @@ public class CryptoKey extends Applet implements ISO7816
 	 * APP_STATE_ACTIVATED			[81 Len <CURR PIN bytes> 82 Len <NEW PIN bytes>]
 	 * @param apdu
 	 */
-	private void changeReferenceData(APDU apdu)
+	private short changeReferenceData(byte[] buff, short cdataOff, short lc)
 	{
-		byte[] buff = apdu.getBuffer();
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
+		short len = 0, off = 0;
 
-		short cdataOff, lc, len = 0, off = 0;
-
-		lc = apdu.setIncomingAndReceive();
-		if (lc == (short)0 || lc != apdu.getIncomingLength()) {
+		if (lc == ZERO) {
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
-
-		cdataOff = apdu.getOffsetCdata();
-
 		// Common case for each LCS: either PIN or PUK.
 		len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x81);
 		off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x81);
@@ -209,7 +211,7 @@ public class CryptoKey extends Applet implements ISO7816
 				len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x82);
 				off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x82);
 				
-				// (off - 1) grab the length too.
+				// (off - 1) means 'grab the length too'.
 				Util.arrayCopyNonAtomic(buff, (short)(off - (short)1), TOKEN_LABEL, (short)0, (short)(len + (short)1));
 				LCS = APP_STATE_INITIALIZATION;
 
@@ -233,7 +235,7 @@ public class CryptoKey extends Applet implements ISO7816
 			} break;
 			case APP_STATE_ACTIVATED: {	// Update PIN
 
-				if (p1 != (byte)0x00 || p2 != (byte)0x00) {
+				if (p1 != ZERO || p2 != ZERO) {
 					ISOException.throwIt(SW_INCORRECT_P1P2);
 				}
 
@@ -256,44 +258,33 @@ public class CryptoKey extends Applet implements ISO7816
 			} break;
 			default: ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
+		return ZERO;
 	}
 
 	/**
 	 * VERIFY (INS 0X20), ISO 7816-4, clause 11.5.6.
 	 * @param apdu
 	 */
-	private void verify(APDU apdu)
+	private short verify(byte[] buff, short cdataOff, short lc)
 	{
-		byte[] buff = apdu.getBuffer();
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
 
-		short cdataOff, lc;
 		byte appState = LCS;
 
 		if (appState == APP_STATE_DEACTIVATED) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if (p1 != (byte)0x00 || p2 != (byte)0x01) {
+		if (p1 != ZERO || p2 != (byte)0x01) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
-		
-		lc = apdu.setIncomingAndReceive();
-		if (lc != apdu.getIncomingLength())  {
-			ISOException.throwIt(SW_WRONG_LENGTH);
-		}
-		
-		cdataOff = apdu.getOffsetCdata();
 
-		// At the below mentioned states no PIN is set yet, thus there is no error at all.
-		if (lc == (byte)0x00 && (appState == APP_STATE_CREATION || appState == APP_STATE_INITIALIZATION)) {
-			
+		// At the CREATION and INITIALIZATION states no PIN is set yet, thus there is no error at all.
+		if (lc == ZERO && (appState <= APP_STATE_INITIALIZATION)) {
 			ISOException.throwIt(SW_NO_ERROR);
-
-		} else if (lc == (byte)0x00 && (appState == APP_STATE_ACTIVATED)) {
-
-			// Absence of CDATA means that user requested the number of remaining tries.
+		} else if (lc == ZERO && (appState == APP_STATE_ACTIVATED)) {
+			// The absence of CDATA means that a user requested the number of remaining tries.
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
 		}
 
@@ -310,6 +301,7 @@ public class CryptoKey extends Applet implements ISO7816
 
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
 		}
+		return ZERO;
 	}
 
 	/**
@@ -318,14 +310,16 @@ public class CryptoKey extends Applet implements ISO7816
 	 * P1 == 0 CDATA: [81 Len PUK && 82 Len NEW PIN] // appying new PIN
 	 * P1 == 1 CDATA: [81 Len PUK]					 // Just reset PIN tries counter
 	 * P3 == 3 CDATA: absent						 // get PUK remaining tries
+	 * 
+	 * As for changing the PIN, unlike changeReferenceData() method, this one updates it if and only if
+	 * a user have submitted the PUK.
 	 * @param apdu
 	 */
-	private void resetRetryCounter(APDU apdu)
+	private short resetRetryCounter(byte[] buff, short cdataOff, short lc)
 	{
-		byte[] buff = apdu.getBuffer();
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
-		short cdataOff, lc, len, off;
+		short len, off;
 
 		if (LCS != APP_STATE_DEACTIVATED || puk == null) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
@@ -334,12 +328,6 @@ public class CryptoKey extends Applet implements ISO7816
 		if ((p1 == (byte)0x02 || p1 > (byte)0x03) || p2 != (byte)0x01) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
-
-		lc = apdu.setIncomingAndReceive();
-		if (lc != apdu.getIncomingLength()) {
-			ISOException.throwIt(SW_WRONG_LENGTH);
-		}
-		cdataOff = apdu.getOffsetCdata();
 
 		// User requested PUK tries counter only.
 		if (p1 == (byte)0x03) {
@@ -362,7 +350,7 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 
 		// P1=0: retrieve and apply a new PIN value.
-		if (p1 == (byte)0x00) {
+		if (p1 == ZERO) {
 			
 			off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x82);
 			len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x82);
@@ -377,38 +365,51 @@ public class CryptoKey extends Applet implements ISO7816
 		// Committing commmon case for P1=0 and P1=1: reset and unblock PIN
 		pin.resetAndUnblock();
 		LCS = APP_STATE_ACTIVATED;
+
+		return ZERO;
 	}
 	
 
-	private void openSecureMessagingSession(APDU apdu)
+	/**
+	 * Generate shared secret.
+	 * 
+	 * This method should be called twice: the first time it accepts an incoming APDU
+	 * containing a public key of the host which is used to generate the shared secret.
+	 * The second time it accepts the APDU with the checksum computed over an random value
+	 * by means of a key generated by the host. In this case it returns SW 9000 if checksum matches.
+	 * @param apdu
+	 */
+	private short openSecureMessagingSession(byte[] buff, short cdataOff, short lc)
 	{
-		short le = 0, lc = 0, cdataOff = 0;
+		short le = 0;
 		byte p1 = 0;
-		byte[] buf = apdu.getBuffer();
-		p1 = buf[OFFSET_P1];
+
+		p1 = buff[OFFSET_P1];
+
+		if (lc != 32) {
+			ISOException.throwIt(SW_WRONG_LENGTH);
+		}
 
 		if (LCS != APP_STATE_ACTIVATED) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
-
+		
 		switch (p1) {
-			case (byte)0x00:	//  the public key in plain text form.
-				le = ecFPpubKey.getW(buf, (short)(cdataOff + (short)1));
-				buf[cdataOff] = (byte)le;
-				apdu.setOutgoingAndSend((short)0, (short)(le + (short)1));
+			case (byte)0x00: //  generate shared secret
+				
+				ecSvdpDhKeyAgrmt.generateSecret(buff, cdataOff, (short)32, sharedSecret, ZERO);
+				
+				// get the public key in plain text form.
+				le = ecFPpubKey.getW(buff, (short)(cdataOff + (short)1));
+				buff[cdataOff] = (byte)le;
+				le += 1;
 			break;
-			case (byte)0x01:	// Generate shared secret
-				lc = apdu.setIncomingAndReceive();
-				if (lc != apdu.getIncomingLength() || lc != 32) {
-					ISOException.throwIt(SW_WRONG_LENGTH);
-				}
-				cdataOff = apdu.getOffsetCdata();
-
-				ecSvdpDhKeyAgrmt.generateSecret(buf, cdataOff, (short)32, sharedSecret, ZERO);
-				Util.arrayCopyNonAtomic(sharedSecret, (short)0, buf, (short)0, (short)20);
-				apdu.setOutgoingAndSend((short)0, (short)20);
+			case (byte)0x01: // verify shared
+				le = ZERO;
 			break;
 		}
+
+		return le;
 	}
 
 	/**
@@ -416,14 +417,12 @@ public class CryptoKey extends Applet implements ISO7816
 	 * Available values:
 	 * P1P2 == 00FF: retrieve all data
 	 */
-	private void getData(APDU apdu)
+	private short getData(byte[] buf)
 	{
-		byte[] buf = apdu.getBuffer();
 		short p1p2  = (short)((short)buf[OFFSET_P1] << (short)8);
 		      p1p2 |= (short)((short)buf[OFFSET_P2] & (short)0x00FF);
 
-		short offset = OFFSET_CDATA;
-
+		short offset = ZERO;
 		switch (p1p2) {
 			case (short)0x00FF: {
 				buf[offset++] = LCS;
@@ -436,11 +435,22 @@ public class CryptoKey extends Applet implements ISO7816
 				offset = Util.arrayCopyNonAtomic(TOKEN_LABEL,   (short)0, buf, offset, (short)((short)TOKEN_LABEL[0]   + (short)1));
 				offset = Util.arrayCopyNonAtomic(MODEL,         (short)0, buf, offset, (short)((short)MODEL[0]         + (short)1));
 				offset = Util.arrayCopyNonAtomic(SERIAL_NUMBER, (short)0, buf, offset, (short)((short)SERIAL_NUMBER[0] + (short)1));
-
 			} break;
 			default: ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
-		apdu.setOutgoingAndSend((short)OFFSET_CDATA, (short)(offset - OFFSET_CDATA));
+		return offset;
+	}
+
+	private boolean isCase1Case2Command(byte ins)
+	{
+		boolean result = false;
+
+		switch (ins) {
+			case INS_GET_DATA:
+				result = true;
+			break;
+		}
+		return result;
 	}
 }
