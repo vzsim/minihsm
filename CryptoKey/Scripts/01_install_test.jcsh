@@ -33,7 +33,7 @@ install -i A00000000101 -q C9#() A000000001 A00000000101
 /echo "PRINT THE LIST OF AVAILABLE PACKAGES AND APPLETS"
 ls
 
-#02_get_data_test
-#03_change_refdata_test
-#04_verify_test
-#05_reset_PIN_test
+02_get_data_test
+03_change_refdata_test
+04_verify_test
+05_reset_PIN_test

@@ -33,9 +33,9 @@ public class CryptoKey extends Applet implements ISO7816
 
 	/* Constant values */
 	private static final byte INS_VERIFY                = (byte)0x20;
+	private static final byte INS_MANAGE_SECURITY_ENV   = (byte)0x22;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte)0x25;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte)0x2D;
-	private static final byte INS_OPEN_SM_SESSION       = (byte)0x80;
 	private static final byte INS_GET_DATA				= (byte)0xCA;
 
 	private static final byte PIN_MAX_TRIES             = (byte)0x03;
@@ -163,7 +163,7 @@ public class CryptoKey extends Applet implements ISO7816
 				case INS_RESET_RETRY_COUNTER: {
 					le = resetRetryCounter(buff, cdataOff, lc);
 				} break;
-				case INS_OPEN_SM_SESSION: {
+				case INS_MANAGE_SECURITY_ENV: {
 					le = openSecureMessagingSession(buff, cdataOff, lc);
 				} break;
 				case INS_GET_DATA: {
@@ -345,7 +345,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if ((p1 == (byte)0x02 || p1 > (byte)0x03) || p2 != (byte)0x01) {
+		if ((p1 < (byte)ZERO || p1 == (byte)0x02 || p1 > (byte)0x03) || p2 != (byte)0x01) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
@@ -359,7 +359,7 @@ public class CryptoKey extends Applet implements ISO7816
 		off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x81);
 
 		if (len < PIN_MIN_LENGTH || len > PIN_MAX_LENGTH || off == (short)-1) {
-			ISOException.throwIt(SW_WRONG_DATA);
+			ISOException.throwIt((short)(SW_WRONG_DATA + (short)1));
 		}
 
 		if (!puk.check(buff, off, (byte)len)) {
@@ -487,17 +487,19 @@ public class CryptoKey extends Applet implements ISO7816
 
 	private boolean isCase3Case4Command(short cmd)
 	{
-		boolean result = false;
+		boolean result;
 
 		switch (cmd) {
 			case (short)0x2000: // verify
 			case (short)0x2500:	// change ref data
 			case (short)0x2501:	// change ref data
-			case (short)0x2D00: // reset retry counter
+			case (short)0x2D00: // reset retry counter: activate card and set new PIN
+			case (short)0x2D01: // reset retry counter: activate card and reset PIN
 			case (short)0x8000: // generate shared: accept host's public key.
 			case (short)0x8002: // generate shared: compare the checksum of the parties
 				result = true;
 			break;
+			default: result = false;
 		}
 		return result;
 	}
