@@ -1,7 +1,9 @@
 build/
 bin/
 .vscode/
+CryptoKey/Scripts/Python/tests-venv
 pkcs11-tool.txt
+*.odt#
 *.log
 .DS_Store
 CryptoKey/.jcop

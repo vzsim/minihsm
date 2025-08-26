@@ -32,11 +32,11 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final short SW_CRYPTO_SHARED_CHECKSUM_MISMATCH = (short)0x6606;
 
 	/* Constant values */
+	private static final byte INS_GET_DATA				= (byte)0xCA;
 	private static final byte INS_VERIFY                = (byte)0x20;
-	private static final byte INS_MANAGE_SECURITY_ENV   = (byte)0x22;
+	private static final byte INS_OPEN_SM               = (byte)0x22;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte)0x25;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte)0x2D;
-	private static final byte INS_GET_DATA				= (byte)0xCA;
 
 	private static final byte PIN_MAX_TRIES             = (byte)0x03;
 	private static final byte PUK_MAX_TRIES             = (byte)0x0A;
@@ -105,11 +105,10 @@ public class CryptoKey extends Applet implements ISO7816
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-		// ecFPPair         = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
-		ecFPPair       = ECCurves.getKeyPair(ECCurves.EC_SecP256k1);
+		ecFPPair       = ECCurves.getKeyPair(ECCurves.EC_BrainpoolP256r1);
 		TOKEN_LABEL    = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
-		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
+		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
 		sharedSecret   = JCSystem.makeTransientByteArray(THIRTY_TWO, JCSystem.CLEAR_ON_DESELECT);
 		aesEphem       = (AESKey)KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
 		aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
@@ -154,20 +153,20 @@ public class CryptoKey extends Applet implements ISO7816
 			}
 
 			switch (ins) {
-				case INS_CHANGE_REFERENCE_DATA: {
-					le = changeReferenceData(buff, cdataOff, lc);
+				case INS_GET_DATA: {
+					le = getData(buff);
 				} break;
 				case INS_VERIFY: {
 					le = verify(buff, cdataOff, lc);
 				} break;
-				case INS_RESET_RETRY_COUNTER: {
-					le = resetRetryCounter(buff, cdataOff, lc);
-				} break;
-				case INS_MANAGE_SECURITY_ENV: {
+				case INS_OPEN_SM: {
 					le = openSecureMessagingSession(buff, cdataOff, lc);
 				} break;
-				case INS_GET_DATA: {
-					le = getData(buff);
+				case INS_CHANGE_REFERENCE_DATA: {
+					le = changeReferenceData(buff, cdataOff, lc);
+				} break;
+				case INS_RESET_RETRY_COUNTER: {
+					le = resetRetryCounter(buff, cdataOff, lc);
 				} break;
 				default: {
 					ISOException.throwIt(SW_INS_NOT_SUPPORTED);
@@ -187,17 +186,17 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 	/**
-	 * CHANGE REFERENCE DATA (INS 0X25), ISO 7816-4, clause 11.5.7.
-	 * 
+	 * CHANGE REFERENCE DATA (INS = 0x25), ISO 7816-4, clause 11.5.7.
+	 * <p>
 	 * CDATA shall contain BER-TLV data object (ISO 7816-4, clause 6.3) to make it possible to
 	 * distinguish one type of data from another (i.e. current PIN and new PIN).
-	 * 
+	 * <p>
 	 * This method handles the following data at specific Life cycle states:
-	 * 
-	 * LCS							CDATA
-	 * APP_STATE_CREATION			[81 Len <Initial PUK bytes>] or absent
-	 * APP_STATE_INITIALIZATION		[81 Len <Initial PIN bytes>] or absent
-	 * APP_STATE_ACTIVATED			[81 Len <CURR PIN bytes> 82 Len <NEW PIN bytes>]
+	 * <ul>
+	 * 	<li>APP_STATE_CREATION			<p>[81 Len <Initial PUK bytes>]
+	 * 	<li>APP_STATE_INITIALIZATION	<p>[81 Len <Initial PIN bytes>]
+	 * 	<li>APP_STATE_ACTIVATED			<p>[81 Len <CURR PIN bytes> 82 Len <NEW PIN bytes>]
+	 * </ul>
 	 * @param apdu
 	 */
 	private short changeReferenceData(byte[] buff, short cdataOff, short lc)
@@ -282,8 +281,11 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 	/**
-	 * VERIFY (INS 0X20), ISO 7816-4, clause 11.5.6.
-	 * @param apdu
+	 * VERIFY (INS = 0x20), ISO 7816-4, clause 11.5.6.
+	 * @param buff
+	 * @param cdataOff
+	 * @param lc
+	 * @return
 	 */
 	private short verify(byte[] buff, short cdataOff, short lc)
 	{
@@ -325,31 +327,34 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 	/**
-	 * RESET RETRY COUNTER (INS 0X2D), ISO 7816-4, clause 11.5.10.
+	 * RESET RETRY COUNTER (INS = 0x2D), ISO 7816-4, clause 11.5.10.
+	 * <p>
 	 * Supported combinations are:
-	 * P1 == 0 CDATA: [81 Len PUK && 82 Len NEW PIN] // appying new PIN
-	 * P1 == 1 CDATA: [81 Len PUK]					 // Just reset PIN tries counter
-	 * P3 == 3 CDATA: absent						 // get PUK remaining tries
-	 * 
+	 * <ul>
+	 * 	<li> P1 == 0 CDATA: [81 Len PUK && 82 Len NEW PIN]	// appying new PIN
+	 * 	<li> P1 == 1 CDATA: [81 Len PUK]					// Just reset PIN tries counter
+	 * 	<li> P3 == 3 CDATA: absent							// get PUK remaining tries
+	 * </ul>
 	 * As for changing the PIN, unlike changeReferenceData() method, this one updates it if and only if
 	 * a user have submitted the PUK.
-	 * @param apdu
+	 * @param buff     incoming data (either PIN or PUK)
+	 * @param cdataOff an offset within buff
+	 * @param lc       a length of incoming data
 	 */
 	private short resetRetryCounter(byte[] buff, short cdataOff, short lc)
 	{
 		byte p1 = buff[OFFSET_P1];
-		byte p2 = buff[OFFSET_P2];
 		short len, off;
 
 		if (LCS != APP_STATE_DEACTIVATED || puk == null) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if ((p1 < (byte)ZERO || p1 == (byte)0x02 || p1 > (byte)0x03) || p2 != (byte)0x01) {
+		if (p1 < (byte)ZERO || p1 > (byte)0x03) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
-		// User requested PUK tries counter only.
+		// PUK tries counter requested.
 		if (p1 == (byte)0x03) {
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | puk.getTriesRemaining()));
 		}
@@ -369,7 +374,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | puk.getTriesRemaining()));
 		}
 
-		// P1=0: retrieve and apply a new PIN value.
+		// P1=0: apply a new PIN value.
 		if (p1 == ZERO) {
 			
 			off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x82);
@@ -382,22 +387,19 @@ public class CryptoKey extends Applet implements ISO7816
 			pin.update(buff, off, (byte)len);
 		}
 
-		// Committing commmon case for P1=0 and P1=1: reset and unblock PIN
+		// Common case for P1=0 and P1=1: reset and unblock PIN
 		pin.resetAndUnblock();
 		LCS = APP_STATE_ACTIVATED;
 
 		return ZERO;
 	}
 	
-
 	/**
-	 * GENERATE SHARED SECRET (INS 0X80).
-	 * 
-	 * This method should be called twice: the first time it accepts an incoming APDU
-	 * containing a public key of the host which is used to generate the shared secret.
-	 * The second time it accepts the APDU with the checksum computed over an random value
-	 * by means of a key generated by the host. In this case it returns SW 9000 if checksum matches.
-	 * @param apdu
+	 * GENERATE SHARED SECRET (INS = 0x22), ISO 7816-4, clause 11.5.11.
+	 * @param buff
+	 * @param cdataOff
+	 * @param lc
+	 * @return
 	 */
 	private short openSecureMessagingSession(byte[] buff, short cdataOff, short lc)
 	{
@@ -409,18 +411,18 @@ public class CryptoKey extends Applet implements ISO7816
 		if (LCS != APP_STATE_ACTIVATED) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
-		
-		// if ((p1 == ZERO       && lc != THIRTY_TWO)
-		//  || (p1 == (byte)0x01 && lc != SIXTEEN)) {
-		// 	ISOException.throwIt(SW_WRONG_LENGTH);
-		// }
 
 		switch (p1) {
 			case (byte)0x00: // generate shared secret
 				
 				// using host's public key, generate a shared secret
-				ecDhPlain.generateSecret(buff, cdataOff, (short)65, sharedSecret, ZERO);
-				le = Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, ZERO, THIRTY_TWO);
+				ecDhPlain.generateSecret(buff, cdataOff, (short)64, sharedSecret, ZERO);
+				
+				// prepare the public key to be sent back to the host
+				le = ecFPpubKey.getW(buff, le);
+
+				// send back the shared secret so that we could compare it
+				le += Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, le, THIRTY_TWO);
 
 				// Use the first bytes of the shared secret as AES key.
 				// aesEphem.setKey(sharedSecret, ZERO);
@@ -429,8 +431,7 @@ public class CryptoKey extends Applet implements ISO7816
 				// aesENC.init(aesEphem, Cipher.MODE_ENCRYPT);
 				// aesDEC.init(aesEphem, Cipher.MODE_DECRYPT);
 
-				// prepare the public key to be sent to the host
-				le += ecFPpubKey.getW(buff, le);
+				
 
 				// generate a random value and send it to the host.
 				// rand.generateData(buff, SIXTEEN, SIXTEEN);
@@ -450,34 +451,39 @@ public class CryptoKey extends Applet implements ISO7816
 				
 				le = ZERO;
 			break;
+			case (byte)0x02:	// test case - get the private key which will be used on the host side
+				le = ecFPprivKey.getS(buff, (short)1);
+				buff[ZERO] = (byte)le;
+				le += (short)1;
+			break;
 		}
 
 		return le;
 	}
 
 	/**
-	 * GET DATA apdu (INS = CA), ISO 7816-4, clause 11.4.3.
-	 * Available values:
-	 * P1P2 == 00FF: retrieve all data
+	 * GET DATA apdu (INS = 0xCA), ISO 7816-4, clause 11.4.3.
+	 * <b>
+	 * @param buff pointer to the APDU buffer
 	 */
-	private short getData(byte[] buf)
+	private short getData(byte[] buff)
 	{
-		short p1p2  = (short)((short)buf[OFFSET_P1] << (short)8);
-		      p1p2 |= (short)((short)buf[OFFSET_P2] & (short)0x00FF);
+		short p1p2  = (short)((short)buff[OFFSET_P1] << (short)8);
+		      p1p2 |= (short)((short)buff[OFFSET_P2] & (short)0x00FF);
 
 		short offset = ZERO;
 		switch (p1p2) {
 			case (short)0x00FF: {
-				buf[offset++] = LCS;
-				buf[offset++] = API_VERSION_MAJOR;
-				buf[offset++] = API_VERSION_MINOR;
-				buf[offset++] = PIN_MIN_LENGTH;
-				buf[offset++] = PIN_MAX_LENGTH;
+				buff[offset++] = LCS;
+				buff[offset++] = API_VERSION_MAJOR;
+				buff[offset++] = API_VERSION_MINOR;
+				buff[offset++] = PIN_MIN_LENGTH;
+				buff[offset++] = PIN_MAX_LENGTH;
 
-				offset = Util.arrayCopyNonAtomic(MANUFACTURER,  (short)0, buf, offset, (short)((short)MANUFACTURER[0]  + (short)1));
-				offset = Util.arrayCopyNonAtomic(TOKEN_LABEL,   (short)0, buf, offset, (short)((short)TOKEN_LABEL[0]   + (short)1));
-				offset = Util.arrayCopyNonAtomic(MODEL,         (short)0, buf, offset, (short)((short)MODEL[0]         + (short)1));
-				offset = Util.arrayCopyNonAtomic(SERIAL_NUMBER, (short)0, buf, offset, (short)((short)SERIAL_NUMBER[0] + (short)1));
+				offset = Util.arrayCopyNonAtomic(MANUFACTURER,  (short)0, buff, offset, (short)((short)MANUFACTURER[0]  + (short)1));
+				offset = Util.arrayCopyNonAtomic(TOKEN_LABEL,   (short)0, buff, offset, (short)((short)TOKEN_LABEL[0]   + (short)1));
+				offset = Util.arrayCopyNonAtomic(MODEL,         (short)0, buff, offset, (short)((short)MODEL[0]         + (short)1));
+				offset = Util.arrayCopyNonAtomic(SERIAL_NUMBER, (short)0, buff, offset, (short)((short)SERIAL_NUMBER[0] + (short)1));
 			} break;
 			default: ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
@@ -491,12 +497,12 @@ public class CryptoKey extends Applet implements ISO7816
 
 		switch (cmd) {
 			case (short)0x2000: // verify
+			case (short)0x2200: // Establish SM: generate shared
+			case (short)0x2201: // Establish SM: verify shared
 			case (short)0x2500:	// change ref data
 			case (short)0x2501:	// change ref data
 			case (short)0x2D00: // reset retry counter: activate card and set new PIN
 			case (short)0x2D01: // reset retry counter: activate card and reset PIN
-			case (short)0x8000: // generate shared: accept host's public key.
-			case (short)0x8002: // generate shared: compare the checksum of the parties
 				result = true;
 			break;
 			default: result = false;
