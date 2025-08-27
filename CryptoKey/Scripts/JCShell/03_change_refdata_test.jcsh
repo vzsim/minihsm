@@ -53,7 +53,7 @@ if ${last.response.status} != 9000
 end
 
 /echo ""
-/echo "CHANGE REF DATA: set PIN"
+/echo "CHANGE REF DATA: set PIN (11111)"
 /send 00250101#(81#(3131313131))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"

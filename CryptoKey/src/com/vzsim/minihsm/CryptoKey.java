@@ -22,8 +22,8 @@ import javacard.security.AESKey;
 public class CryptoKey extends Applet implements ISO7816
 {
 	private static final short ZERO = (short)0;
-	private static final short SIXTEEN = (short)16;
 	private static final short THIRTY_TWO = (short)32;
+	private static final short SIXTY_FOUR = (short)64;
 
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
@@ -105,11 +105,11 @@ public class CryptoKey extends Applet implements ISO7816
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-		ecFPPair       = ECCurves.getKeyPair(ECCurves.EC_BrainpoolP256r1);
+		ecFPPair       = ECCurves.getKeyPair(ECCurves.EC_SEC_P256R1);
 		TOKEN_LABEL    = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
-		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-		sharedSecret   = JCSystem.makeTransientByteArray(THIRTY_TWO, JCSystem.CLEAR_ON_DESELECT);
+		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
+		sharedSecret   = JCSystem.makeTransientByteArray(SIXTY_FOUR, JCSystem.CLEAR_ON_DESELECT);
 		aesEphem       = (AESKey)KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
 		aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
 		aesDEC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
@@ -404,7 +404,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private short openSecureMessagingSession(byte[] buff, short cdataOff, short lc)
 	{
 		short le = 0;
-		byte p1 = 0;
+		byte p1 = 0, temp = 0;
 
 		p1 = buff[OFFSET_P1];
 
@@ -416,13 +416,13 @@ public class CryptoKey extends Applet implements ISO7816
 			case (byte)0x00: // generate shared secret
 				
 				// using host's public key, generate a shared secret
-				ecDhPlain.generateSecret(buff, cdataOff, (short)64, sharedSecret, ZERO);
+				ecDhPlain.generateSecret(buff, cdataOff, lc, sharedSecret, ZERO);
 				
 				// prepare the public key to be sent back to the host
-				le = ecFPpubKey.getW(buff, le);
+				le = ecFPpubKey.getW(buff, ZERO);
 
 				// send back the shared secret so that we could compare it
-				le += Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, le, THIRTY_TWO);
+				le = Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, le, THIRTY_TWO);
 
 				// Use the first bytes of the shared secret as AES key.
 				// aesEphem.setKey(sharedSecret, ZERO);

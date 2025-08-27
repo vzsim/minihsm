@@ -1,4 +1,6 @@
 from tinyec import registry
+from tinyec import ec
+
 import secrets
 import pythonSC as pcsc
 
@@ -33,28 +35,43 @@ def ln(array):
 def compress(public_key):
 	return hex(public_key.x)[2:] + hex(public_key.y % 2)[2:]
 
-def uncompressed(public_key):
-	return hex(public_key.x)[2:] + hex(public_key.y)[2:]
+def uncompress(public_key):
+	ret_val = hex(public_key.x)[2:] + hex(public_key.y)[2:]
+	ret_val_len = ln(ret_val)[0]
+	
+	# padd the leading zero for the MSB (if required)
+	if ret_val_len < 64:
+		ret_val = '0' + ret_val
+
+	return '04' + ret_val
 
 def process():
 	global context
 	global card
 	global protocol
+	response = 0
 
-	curve = registry.get_curve('brainpoolP256r1')
-	response = 1
-	alice_priv_key = response
-	# alice_priv_key = secrets.randbelow(curve.field.n)
+	curve = registry.get_curve('secp256r1')
+	# alice_priv_key = 3
+	alice_priv_key = secrets.randbelow(curve.field.n)
 	alice_publ_key = alice_priv_key * curve.g
-	
-	print("Alice private key y            : ", hex(alice_priv_key)[2:])
-	print("Alice public key (uncompressed): ", uncompressed(alice_publ_key))
-	print("Alice public key (compressed)  : ", compress(alice_publ_key))
 
 	context, card, protocol = pcsc.openCardAnyReader(readers_list)
 	trn(pcsc.asciiToHex('00A40400') + ln('A00000000101'), expsw = 0x9000, descr = 'Select CryptoKey')
-	trn(pcsc.asciiToHex('00220000') + ln(uncompressed(alice_publ_key)), expsw = 0x9000, descr = 'Generate shared secret')
-	# response = trn(pcsc.asciiToHex('00220200'), expsw = 0x9000, descr = 'Get card\'s private key')[:-2]
+	response = trn(pcsc.asciiToHex('00220000') + ln(uncompress(alice_publ_key)), expsw = 0x9000, descr = 'Generate shared secret')
+
+	card_publ_raw = response[0:65]
+	card_shared_raw = response[65:-2]
+
+	card_shared_packed = ec.Point(curve, card_shared_raw[1:32], card_shared_raw[32:])
+	alice_shared_key = alice_priv_key.__mul__(card_publ_raw)
+	
+
+	print("Alice public key (uncompressed)  : ", uncompress(alice_publ_key))
+	print("\nCard public key (uncompressed) : ", hexToAscii(card_publ_raw))
+	print("\nCard shared key                : ", hexToAscii(card_shared_raw))
+	print("\nAlice shared key               : ", alice_shared_key)
+	print("\nCard shared key (packed)       : ", uncompress(card_shared_packed))
 
 	pcsc.disconnect(card)
 
