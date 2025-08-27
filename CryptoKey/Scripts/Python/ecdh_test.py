@@ -2,7 +2,7 @@ from tinyec import registry
 import secrets
 import pythonSC as pcsc
 
-readers_list = ['']
+readers_list = ['Virtual PCD 00 00']
 
 def trn(cmd, expsw = 0, expdata = None, descr = ''):
 	if (isinstance(cmd, str)):
@@ -41,14 +41,11 @@ def process():
 	global card
 	global protocol
 
-	
 	curve = registry.get_curve('brainpoolP256r1')
 	response = 1
 	alice_priv_key = response
 	# alice_priv_key = secrets.randbelow(curve.field.n)
 	alice_publ_key = alice_priv_key * curve.g
-
-
 	
 	print("Alice private key y            : ", hex(alice_priv_key)[2:])
 	print("Alice public key (uncompressed): ", uncompressed(alice_publ_key))

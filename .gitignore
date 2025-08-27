@@ -2,6 +2,7 @@ build/
 bin/
 .vscode/
 CryptoKey/Scripts/Python/tests-venv
+CryptoKey/Scripts/Python/__pycache__
 pkcs11-tool.txt
 *.odt#
 *.log
