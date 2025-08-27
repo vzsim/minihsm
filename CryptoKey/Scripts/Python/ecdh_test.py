@@ -63,15 +63,16 @@ def process():
 	card_publ_raw = response[0:65]
 	card_shared_raw = response[65:-2]
 
-	card_shared_packed = ec.Point(curve, card_shared_raw[1:32], card_shared_raw[32:])
-	alice_shared_key = alice_priv_key.__mul__(card_publ_raw)
+	# card_shared_packed = ec.Point(curve, card_shared_raw[1:32], card_shared_raw[32:])
+	card_publ_int = int("".join(map(str, card_publ_raw)))
+	alice_shared_key = alice_priv_key * curve.g * card_publ_int
 	
 
-	print("Alice public key (uncompressed)  : ", uncompress(alice_publ_key))
+	print("\nAlice public key (uncompressed): ", uncompress(alice_publ_key))
+	print("\nAlice shared key               : ", uncompress(alice_shared_key)[2:])
+
 	print("\nCard public key (uncompressed) : ", hexToAscii(card_publ_raw))
-	print("\nCard shared key                : ", hexToAscii(card_shared_raw))
-	print("\nAlice shared key               : ", alice_shared_key)
-	print("\nCard shared key (packed)       : ", uncompress(card_shared_packed))
+	print("\nCard shared key (as int)       : ", hexToAscii(card_shared_raw)[2:])
 
 	pcsc.disconnect(card)
 
