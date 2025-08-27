@@ -1,3 +1,4 @@
+"""
 from tinyec import registry
 from tinyec import ec
 
@@ -65,15 +66,53 @@ def process():
 
 	# card_shared_packed = ec.Point(curve, card_shared_raw[1:32], card_shared_raw[32:])
 	card_publ_int = int("".join(map(str, card_publ_raw)))
-	alice_shared_key = alice_priv_key * curve.g * card_publ_int
+	alice_shared_key = (alice_publ_key * card_publ_int) % curve.field.n
 	
 
 	print("\nAlice public key (uncompressed): ", uncompress(alice_publ_key))
-	print("\nAlice shared key               : ", uncompress(alice_shared_key)[2:])
+	print("\nCard  public key (uncompressed): ", hexToAscii(card_publ_raw))
 
-	print("\nCard public key (uncompressed) : ", hexToAscii(card_publ_raw))
-	print("\nCard shared key (as int)       : ", hexToAscii(card_shared_raw)[2:])
+	print("\nAlice shared key               : ", uncompress(alice_shared_key)[2:])
+	print("\nCard  shared key (as int)      : ", hexToAscii(card_shared_raw)[2:])
 
 	pcsc.disconnect(card)
 
 process()
+"""
+
+from secp256k1 import curve,scalar_mult
+import random
+
+print("Basepoint:\t", curve.g)
+
+aliceSecretKey  = random.randrange(1, curve.n)
+alicePublicKey = scalar_mult(aliceSecretKey, curve.g)
+
+bobSecretKey  = random.randrange(1, curve.n)
+bobPublicKey = scalar_mult(bobSecretKey, curve.g)
+
+print("\nAlice\'s secret key:\t", aliceSecretKey)
+print("Alice\'s public key:\t", alicePublicKey)
+print("\nBob\'s secret key:\t", bobSecretKey)
+print("Bob\'s public key:\t", bobPublicKey)
+
+print("==========================")
+
+sharedSecret1 = scalar_mult(bobSecretKey, alicePublicKey)
+sharedSecret2 = scalar_mult(aliceSecretKey, bobPublicKey)
+
+print("==========================")
+print("Alice\'s shared key:\t", sharedSecret1)
+print("Bob\'s shared key:\t", sharedSecret2)
+
+print("\n==========================")
+print("abG: \t", (sharedSecret1[0]))
+
+res=(aliceSecretKey*bobSecretKey) % curve.n
+
+res=scalar_mult(res, curve.g)
+
+print("(ab)G \t", (res[0]))
+
+# https://asecuritysite.com/ecc/python_secp256k1ecdh
+# trying this implementation

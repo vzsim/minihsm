@@ -105,7 +105,7 @@ public class CryptoKey extends Applet implements ISO7816
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
 		pin = new OwnerPIN(PIN_MAX_TRIES, PIN_MAX_LENGTH);
 
-		ecFPPair       = ECCurves.getKeyPair(ECCurves.EC_SEC_P256R1);
+		ecFPPair       = ECCurves.getKeyPair(ECCurves.EC_SecP256k1);
 		TOKEN_LABEL    = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
 		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
@@ -404,7 +404,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private short openSecureMessagingSession(byte[] buff, short cdataOff, short lc)
 	{
 		short le = 0;
-		byte p1 = 0, temp = 0;
+		byte p1 = 0;
 
 		p1 = buff[OFFSET_P1];
 
