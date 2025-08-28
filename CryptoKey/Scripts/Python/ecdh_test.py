@@ -1,8 +1,5 @@
-"""
-from tinyec import registry
-from tinyec import ec
-
-import secrets
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import pythonSC as pcsc
 
 readers_list = ['Virtual PCD 00 00']
@@ -33,11 +30,8 @@ def ln(array):
 	return [len(array)] + array
 
 
-def compress(public_key):
-	return hex(public_key.x)[2:] + hex(public_key.y % 2)[2:]
-
 def uncompress(public_key):
-	ret_val = hex(public_key.x)[2:] + hex(public_key.y)[2:]
+	ret_val = hex(public_key.public_numbers().x)[2:] + hex(public_key.public_numbers().y)[2:]
 	ret_val_len = ln(ret_val)[0]
 	
 	# padd the leading zero for the MSB (if required)
@@ -46,73 +40,53 @@ def uncompress(public_key):
 
 	return '04' + ret_val
 
-def process():
+
+class DiffHell:
+	def __init__(self):
+		# of type EllipticCurvePrivateKey
+		self.priv_key = ec.generate_private_key(ec.SECP256K1())
+		self.publ_key = self.priv_key.public_key()
+		self.cipher = None
+		self.secret_key = None
+		self.iv = 0
+
+	def gen_shared(self, public_key):
+		shared_key = self.priv_key.exchange(ec.ECDH(), public_key)
+		return shared_key
+	
+	def init_cipher(self, sk):
+		self.secret_key = sk
+		self.cipher = Cipher(algorithms.AES(sk), modes.CBC(iv))
+	
+	def encrypt_msg(self, plain_bytes):
+		encryptor = self.cipher.encryptor()
+		cipher_text = encryptor.update(plain_bytes) + encryptor.finalize()
+		return cipher_text
+
+
+def main_func():
 	global context
 	global card
 	global protocol
-	response = 0
-
-	curve = registry.get_curve('secp256r1')
-	# alice_priv_key = 3
-	alice_priv_key = secrets.randbelow(curve.field.n)
-	alice_publ_key = alice_priv_key * curve.g
+	dh = DiffHell()
 
 	context, card, protocol = pcsc.openCardAnyReader(readers_list)
-	trn(pcsc.asciiToHex('00A40400') + ln('A00000000101'), expsw = 0x9000, descr = 'Select CryptoKey')
-	response = trn(pcsc.asciiToHex('00220000') + ln(uncompress(alice_publ_key)), expsw = 0x9000, descr = 'Generate shared secret')
 
-	card_publ_raw = response[0:65]
+	trn(           pcsc.asciiToHex('00A40400') + ln('A00000000101'),          expsw = 0x9000, descr = 'Select CryptoKey')
+	response = trn(pcsc.asciiToHex('00220000') + ln(uncompress(dh.publ_key)), expsw = 0x9000, descr = 'Generate shared secret')
+
+	card_publ_raw = response[1:65]
 	card_shared_raw = response[65:-2]
 
-	# card_shared_packed = ec.Point(curve, card_shared_raw[1:32], card_shared_raw[32:])
-	card_publ_int = int("".join(map(str, card_publ_raw)))
-	alice_shared_key = (alice_publ_key * card_publ_int) % curve.field.n
-	
+	card_publ_key = ec.EllipticCurvePublicNumbers(int.from_bytes(card_publ_raw[0:32], 'big'), int.from_bytes(card_publ_raw[32:64], 'big'), ec.SECP256K1())
+	host_shared = dh.gen_shared(card_publ_key.public_key())
 
-	print("\nAlice public key (uncompressed): ", uncompress(alice_publ_key))
-	print("\nCard  public key (uncompressed): ", hexToAscii(card_publ_raw))
+	print("\nHost public key : ", uncompress(dh.publ_key))
+	print("Card  public key: ", hexToAscii(card_publ_raw))
+	print("Host  shared key: ", hexToAscii(host_shared))
+	print("Card  shared key: ", hexToAscii(card_shared_raw))
 
-	print("\nAlice shared key               : ", uncompress(alice_shared_key)[2:])
-	print("\nCard  shared key (as int)      : ", hexToAscii(card_shared_raw)[2:])
-
+	print("Are values equal? ", hexToAscii(host_shared) == hexToAscii(card_shared_raw))
 	pcsc.disconnect(card)
 
-process()
-"""
-
-from secp256k1 import curve,scalar_mult
-import random
-
-print("Basepoint:\t", curve.g)
-
-aliceSecretKey  = random.randrange(1, curve.n)
-alicePublicKey = scalar_mult(aliceSecretKey, curve.g)
-
-bobSecretKey  = random.randrange(1, curve.n)
-bobPublicKey = scalar_mult(bobSecretKey, curve.g)
-
-print("\nAlice\'s secret key:\t", aliceSecretKey)
-print("Alice\'s public key:\t", alicePublicKey)
-print("\nBob\'s secret key:\t", bobSecretKey)
-print("Bob\'s public key:\t", bobPublicKey)
-
-print("==========================")
-
-sharedSecret1 = scalar_mult(bobSecretKey, alicePublicKey)
-sharedSecret2 = scalar_mult(aliceSecretKey, bobPublicKey)
-
-print("==========================")
-print("Alice\'s shared key:\t", sharedSecret1)
-print("Bob\'s shared key:\t", sharedSecret2)
-
-print("\n==========================")
-print("abG: \t", (sharedSecret1[0]))
-
-res=(aliceSecretKey*bobSecretKey) % curve.n
-
-res=scalar_mult(res, curve.g)
-
-print("(ab)G \t", (res[0]))
-
-# https://asecuritysite.com/ecc/python_secp256k1ecdh
-# trying this implementation
+main_func()

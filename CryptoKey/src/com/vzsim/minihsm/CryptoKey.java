@@ -451,11 +451,6 @@ public class CryptoKey extends Applet implements ISO7816
 				
 				le = ZERO;
 			break;
-			case (byte)0x02:	// test case - get the private key which will be used on the host side
-				le = ecFPprivKey.getS(buff, (short)1);
-				buff[ZERO] = (byte)le;
-				le += (short)1;
-			break;
 		}
 
 		return le;
