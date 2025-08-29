@@ -35,9 +35,10 @@ def uncompress(public_key):
 	ret_val_len = ln(ret_val)[0]
 	
 	# padd the leading zero for the MSB (if required)
-	if ret_val_len < 64:
+	if ret_val_len == 63:
 		ret_val = '0' + ret_val
-
+	elif ret_val_len == 62:
+		ret_val = '00' + ret_val
 	return '04' + ret_val
 
 
@@ -48,7 +49,7 @@ class DiffHell:
 		self.publ_key = self.priv_key.public_key()
 		self.cipher = None
 		self.secret_key = None
-		self.iv = 0
+		self.iv = bytearray(16)
 
 	def gen_shared(self, public_key):
 		shared_key = self.priv_key.exchange(ec.ECDH(), public_key)
@@ -56,11 +57,12 @@ class DiffHell:
 	
 	def init_cipher(self, sk):
 		self.secret_key = sk
+		# print("Host secret key: ", self.secret_key)
 		self.cipher = Cipher(algorithms.AES(sk), modes.CBC(self.iv))
 	
-	def encrypt_msg(self, plain_bytes):
+	def encrypt_msg(self, plain_text: bytes):
 		encryptor = self.cipher.encryptor()
-		cipher_text = encryptor.update(plain_bytes) + encryptor.finalize()
+		cipher_text = encryptor.update(plain_text) + encryptor.finalize()
 		return cipher_text
 
 	def decrypt_msg(self, cipher_bytes):
@@ -70,6 +72,7 @@ class DiffHell:
 
 
 def main_func():
+
 	global context
 	global card
 	global protocol
@@ -78,20 +81,23 @@ def main_func():
 	context, card, protocol = pcsc.openCardAnyReader(readers_list)
 
 	trn(           pcsc.asciiToHex('00A40400') + ln('A00000000101'),          expsw = 0x9000, descr = 'Select CryptoKey')
-	response = trn(pcsc.asciiToHex('00220000') + ln(uncompress(dh.publ_key)), expsw = 0x9000, descr = 'Generate shared secret')
+	response = trn(pcsc.asciiToHex('00220000') + ln(uncompress(dh.publ_key)), expsw = 0x9000, descr = 'OPEN SM: get public key')
 
-	card_pubk_x = int.from_bytes(response[1:33], 'big')
-	card_pubk_y = int.from_bytes(response[33:65], 'big')
-	
-	card_publ_key = ec.EllipticCurvePublicNumbers(card_pubk_x, card_pubk_y, ec.SECP256K1())
+	_x = int.from_bytes(response[1:33], 'big')
+	_y = int.from_bytes(response[33:65], 'big')
+	card_publ_key = ec.EllipticCurvePublicNumbers(_x, _y, ec.SECP256K1())
+
 	host_shared = dh.gen_shared(card_publ_key.public_key())
+	# print("\nHost shared key: ", hexToAscii(host_shared))
 
-	print("\nHost public key : ", uncompress(dh.publ_key))
-	print("Card  public key: ", hexToAscii(response[0:65]))
-	print("Host  shared key: ", hexToAscii(host_shared))
-	print("Card  shared key: ", hexToAscii(response[65:-2]))
+	dh.init_cipher(host_shared[0:16])
 
-	print("Are values equal? ", hexToAscii(host_shared) == hexToAscii(response[65:-2]))
+	response      = trn(pcsc.asciiToHex('0022010000'), expsw = 0x9000, descr = 'OPEN SM: get a random')
+	cipher_text   = dh.encrypt_msg(bytes(response[:-2]))
+	# print("\nHost cipher text: ", hexToAscii(cipher_text))
+
+	response = trn(pcsc.asciiToHex('00220200') + ln(hexToAscii(cipher_text)), expsw = 0x9000, descr = 'OPEN SM: check the cryptogram')
+
 	pcsc.disconnect(card)
 
 main_func()
