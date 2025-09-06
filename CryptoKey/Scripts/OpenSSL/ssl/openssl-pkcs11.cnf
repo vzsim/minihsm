@@ -1,0 +1,11 @@
+.include /etc/ssl/openssl.cnf
+
+[openssl_init]
+engines = engine_section
+
+[engine_section]
+pkcs11 = pkcs11_section
+
+[pkcs11_section]
+engine_id = pkcs11
+MODULE_PATH = /opt/safenet/protecttoolkit7/ptk/lib/libcryptoki.so

@@ -1,0 +1,5 @@
+# eUICC certificate creation configuration
+authorityKeyIdentifier = keyid
+subjectKeyIdentifier = hash
+keyUsage = critical, digitalSignature
+certificatePolicies = critical, 2.23.146.1.2.1.1  #OID id-rspRole-e

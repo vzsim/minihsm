@@ -1,0 +1,21 @@
+# openssl EMU certificate request configuration file
+extensions = extend
+
+[req] 
+prompt = no
+distinguished_name = dn-name
+
+[dn-name] 
+countryName = AT
+organizationName = Intergalaxy
+commonName = intergalaxy.org
+
+[extend] # openssl extensions
+authorityKeyIdentifier = keyid, issuer
+subjectKeyIdentifier = hash
+keyUsage = critical, keyCertSign
+certificatePolicies = critical, 2.23.146.1.2.1.2 #OID id-rspRole-eum
+subjectAltName = RID:2.999.5
+basicConstraints = critical, CA:TRUE, pathlen:0
+crlDistributionPoints = URI:http://ci.intergalaxy.org/CRL-B.crl
+nameConstraints = critical, DER:30:42:A0:40:30:3E:A4:3C:30:3A:31:25:30:23:06:03:55:04:0A:0C:1C:4E:58:50:20:53:45:4D:49:43:4F:4E:44:55:43:54:4F:52:53:20:49:4E:44:49:41:20:4C:54:44:31:11:30:0F:06:03:55:04:05:13:08:38:39:30:34:39:30:33:32
