@@ -16,18 +16,6 @@ typedef struct {
 	uint16_t  protocol;
 } Apdu_t;
 
-static CK_BBOOL pkcs11_initialized = CK_FALSE;
-static CK_BBOOL pkcs11_session_opened = CK_FALSE;
-static CK_ULONG pkcs11_session_state = CKS_RO_PUBLIC_SESSION;
-static CK_SLOT_ID pkcs11_slotID = 0;
-static PKCS11_CRYPTOLIB_CK_OPERATION pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
-static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
-
-static CK_ULONG ulPinLenMin = 0;
-static CK_ULONG ulPinLenMax = 0;
-
-static Apdu_t apduHdlr;
-
 static CK_FUNCTION_LIST pkcs11_240_funcs =
 {
 	{0x02, 0x28},

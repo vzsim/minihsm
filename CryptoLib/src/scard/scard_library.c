@@ -1,111 +1,12 @@
 #include "scard_library.h"
 
-typedef struct {
-	SCARDCONTEXT      ctx;						// SCard connection contex
-	SCARDHANDLE       connHdlr;					// Connection handler
-	DWORD             connPtcl;					// Connection protocol (T=0/T=1)
-	LPSTR             ifdList;					// The list of available readers
-	DWORD             ifdListLen;				// The length of list of available readers
-	SCARD_READERSTATE ifdState[16];				// The state of reader connected to
-	char              ifdName[MAX_READERNAME];	// The name of this reader
-	DWORD             ifdNameLen;
-	DWORD             ifdCount;
-} ConnectionManager_t;
-
-
-#if defined(CRYPTOKI_DEBUG)
-
-typedef struct {
-	LONG code;
-	const char* name;
-} errorCode;
-
-static errorCode codes[] = {
-
-	{SCARD_S_SUCCESS, 			"SCARD_S_SUCCESS" },
-	{SCARD_F_INTERNAL_ERROR,	"SCARD_F_INTERNAL_ERROR" },
-	{SCARD_E_CANCELLED,			"SCARD_E_CANCELLED" },
-	{SCARD_E_INVALID_HANDLE,	"SCARD_E_INVALID_HANDLE" },
-	{SCARD_E_INVALID_PARAMETER	, "SCARD_E_INVALID_PARAMETER" },
-	{SCARD_E_INVALID_TARGET		, "SCARD_E_INVALID_TARGET" },
-	{SCARD_E_NO_MEMORY		, "SCARD_E_NO_MEMORY" },
-	{SCARD_F_WAITED_TOO_LONG	, "SCARD_F_WAITED_TOO_LONG" },
-	{SCARD_E_INSUFFICIENT_BUFFER	, "SCARD_E_INSUFFICIENT_BUFFER" },
-	{SCARD_E_UNKNOWN_READER		, "SCARD_E_UNKNOWN_READER" },
-	{SCARD_E_TIMEOUT			, "SCARD_E_TIMEOUT" },
-	{SCARD_E_SHARING_VIOLATION	, "SCARD_E_SHARING_VIOLATION" },
-	{SCARD_E_NO_SMARTCARD		, "SCARD_E_NO_SMARTCARD" },
-	{SCARD_E_UNKNOWN_CARD		, "SCARD_E_UNKNOWN_CARD" },
-	{SCARD_E_CANT_DISPOSE		, "SCARD_E_CANT_DISPOSE" },
-	{SCARD_E_PROTO_MISMATCH		, "SCARD_E_PROTO_MISMATCH" },
-	{SCARD_E_NOT_READY		, "SCARD_E_NOT_READY" },
-	{SCARD_E_INVALID_VALUE		, "SCARD_E_INVALID_VALUE" },
-	{SCARD_E_SYSTEM_CANCELLED	, "SCARD_E_SYSTEM_CANCELLED" },
-	{SCARD_F_COMM_ERROR		, "SCARD_F_COMM_ERROR" },
-	{SCARD_F_UNKNOWN_ERROR		, "SCARD_F_UNKNOWN_ERROR" },
-	{SCARD_E_INVALID_ATR		, "SCARD_E_INVALID_ATR" },
-	{SCARD_E_NOT_TRANSACTED		, "SCARD_E_NOT_TRANSACTED" },
-	{SCARD_E_READER_UNAVAILABLE	, "SCARD_E_READER_UNAVAILABLE" },
-	{SCARD_P_SHUTDOWN		, "SCARD_P_SHUTDOWN" },
-	{SCARD_E_PCI_TOO_SMALL		, "SCARD_E_PCI_TOO_SMALL" },
-	{SCARD_E_READER_UNSUPPORTED	, "SCARD_E_READER_UNSUPPORTED" },
-	{SCARD_E_DUPLICATE_READER	, "SCARD_E_DUPLICATE_READER" },
-	{SCARD_E_CARD_UNSUPPORTED	, "SCARD_E_CARD_UNSUPPORTED" },
-	{SCARD_E_NO_SERVICE		, "SCARD_E_NO_SERVICE" },
-	{SCARD_E_SERVICE_STOPPED	, "	SCARD_E_SERVICE_STOPPED" },
-	{SCARD_E_UNEXPECTED		, "SCARD_E_UNEXPECTED" },
-	{SCARD_E_UNSUPPORTED_FEATURE	, "SCARD_E_UNSUPPORTED_FEATURE" },
-	{SCARD_E_ICC_INSTALLATION	, "SCARD_E_ICC_INSTALLATION" },
-	{SCARD_E_ICC_CREATEORDER		, "SCARD_E_ICC_CREATEORDER" },
-	{SCARD_E_UNSUPPORTED_FEATURE	, "SCARD_E_UNSUPPORTED_FEATURE" },
-	{SCARD_E_DIR_NOT_FOUND		, "SCARD_E_DIR_NOT_FOUND" },
-	{SCARD_E_FILE_NOT_FOUND		, "SCARD_E_FILE_NOT_FOUND" },
-	{SCARD_E_NO_DIR			, "SCARD_E_NO_DIR" },
-	{SCARD_E_NO_FILE			, "SCARD_E_NO_FILE" },
-	{SCARD_E_NO_ACCESS, "SCARD_E_NO_ACCESS" },
-	{SCARD_E_WRITE_TOO_MANY		, "SCARD_E_WRITE_TOO_MANY" },
-	{SCARD_E_BAD_SEEK		, "SCARD_E_BAD_SEEK" },
-	{SCARD_E_INVALID_CHV		, "SCARD_E_INVALID_CHV" },
-	// {SCARD_E_UNKNOWN_RES_MSG		, "SCARD_E_UNKNOWN_RES_MSG" },
-	{SCARD_E_UNKNOWN_RES_MNG	, "SCARD_E_UNKNOWN_RES_MNG" },
-	{SCARD_E_NO_SUCH_CERTIFICATE	, "SCARD_E_NO_SUCH_CERTIFICATE" },
-	{SCARD_E_CERTIFICATE_UNAVAILABLE	, "SCARD_E_CERTIFICATE_UNAVAILABLE" },
-	{SCARD_E_NO_READERS_AVAILABLE    , "SCARD_E_NO_READERS_AVAILABLE" },
-	{SCARD_E_COMM_DATA_LOST, "SCARD_E_COMM_DATA_LOST" },
-	{SCARD_E_NO_KEY_CONTAINER, "SCARD_E_NO_KEY_CONTAINER" },
-	{SCARD_E_SERVER_TOO_BUSY, "SCARD_E_SERVER_TOO_BUSY" }
-};
-
-static void
-print_error_code(LONG rv)
-{
-	for (uint32_t i = 0; i < (sizeof(codes) / sizeof(codes[0])); ++i) {
-		if (codes[i].code == rv) {
-			printf("%s\n", codes[i].name);
-			return;
-		}
-	}
-	printf("Unknown SCARD error\n");
-}
-
-#	define DBG_PRINT_ERROR(rv)	\
-	print_error_code(rv);
-
-#	define DBG_PRINT_IFD_NAME()	\
-	printf("\n%s\n", connMan.ifdState[i].szReader);
-
-#else
-#	define DBG_PRINT_ERROR(rv)
-#	define DBG_PRINT_IFD_NAME()
-#endif
-
-static ConnectionManager_t connMan;
+static IFD_t connMan;
 
 uint8_t
 sc_create_ctx(void)
 {
 	LONG rv;
-	memset(&connMan, 0x00, sizeof(ConnectionManager_t));
+	memset(&connMan, 0x00, sizeof(IFD_t));
 
 	for (uint32_t i = 0; i < 16; ++i) {
 		connMan.ifdState[i].cbAtr = MAX_ATR_SIZE;
@@ -123,8 +24,8 @@ sc_delete_ctx(void)
 		SCardReleaseContext(connMan.ctx);
 	}
 
-	if (connMan.ifdList != NULL) {
-		free(connMan.ifdList);
+	if (connMan.list != NULL) {
+		free(connMan.list);
 	}
 }
 
@@ -134,24 +35,24 @@ sc_get_available_readers(void)
 	LONG rv;
 	do {
 		// Calculating a length required for a buffer to be allocated to hold the list of names of available readers
-		rv = SCardListReaders(connMan.ctx, NULL, NULL, &connMan.ifdListLen);
+		rv = SCardListReaders(connMan.ctx, NULL, NULL, &connMan.listLen);
 		if (rv != SCARD_S_SUCCESS) {
 			break;
 		}
 
 		// allocate the buffer.
 		rv = SCARD_E_NO_MEMORY;
-		connMan.ifdList = malloc(connMan.ifdListLen);
-		if (NULL == connMan.ifdList) {
+		connMan.list = malloc(connMan.listLen);
+		if (NULL == connMan.list) {
 			break;
 		}
 
-		rv = SCardListReaders(connMan.ctx, NULL, connMan.ifdList, &connMan.ifdListLen);
+		rv = SCardListReaders(connMan.ctx, NULL, connMan.list, &connMan.listLen);
 
-		for (uint32_t i = 0, j = 0; i < connMan.ifdListLen - 1; ++j) {
+		for (uint32_t i = 0, j = 0; i < connMan.listLen - 1; ++j) {
 			connMan.ifdCount++;
-			connMan.ifdState[j].szReader = &connMan.ifdList[i];
-			while (connMan.ifdList[i++] != '\0');
+			connMan.ifdState[j].szReader = &connMan.list[i];
+			while (connMan.list[i++] != '\0');
 		}
 
 	} while (0);
