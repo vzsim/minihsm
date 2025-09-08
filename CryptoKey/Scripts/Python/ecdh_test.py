@@ -81,22 +81,25 @@ def main_func():
 	context, card, protocol = pcsc.openCardAnyReader(readers_list)
 
 	trn(           pcsc.asciiToHex('00A40400') + ln('A00000000101'),          expsw = 0x9000, descr = 'Select CryptoKey')
+	trn(           pcsc.asciiToHex('00200000') + ln('3131313131'),            expsw = 0x9000, descr = 'Verify PIN')
 	response = trn(pcsc.asciiToHex('00220000') + ln(uncompress(dh.publ_key)), expsw = 0x9000, descr = 'OPEN SM: get public key')
 
 	_x = int.from_bytes(response[1:33], 'big')
 	_y = int.from_bytes(response[33:65], 'big')
+
 	card_publ_key = ec.EllipticCurvePublicNumbers(_x, _y, ec.SECP256K1())
 
 	host_shared = dh.gen_shared(card_publ_key.public_key())
-	# print("\nHost shared key: ", hexToAscii(host_shared))
+	print("\nHost shared key: ", hexToAscii(host_shared))
+	print("\nCard shared key: ", hexToAscii(response[65:97]))
 
-	dh.init_cipher(host_shared[0:16])
+	# dh.init_cipher(host_shared[0:16])
 
-	response      = trn(pcsc.asciiToHex('0022010000'), expsw = 0x9000, descr = 'OPEN SM: get a random')
-	cipher_text   = dh.encrypt_msg(bytes(response[:-2]))
-	# print("\nHost cipher text: ", hexToAscii(cipher_text))
+	# response      = trn(pcsc.asciiToHex('0022010000'), expsw = 0x9000, descr = 'OPEN SM: get a random')
+	# cipher_text   = dh.encrypt_msg(bytes(response[:-2]))
+	# # print("\nHost cipher text: ", hexToAscii(cipher_text))
 
-	response = trn(pcsc.asciiToHex('00220200') + ln(hexToAscii(cipher_text)), expsw = 0x9000, descr = 'OPEN SM: check the cryptogram')
+	# response = trn(pcsc.asciiToHex('00220200') + ln(hexToAscii(cipher_text)), expsw = 0x9000, descr = 'OPEN SM: check the cryptogram')
 
 	pcsc.disconnect(card)
 

@@ -14,27 +14,28 @@ import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyPair;
-import javacard.security.RandomData;
-import javacardx.crypto.Cipher;
-import javacard.security.KeyBuilder;
-import javacard.security.AESKey;
+// import javacard.security.RandomData;
+// import javacardx.crypto.Cipher;
+// import javacard.security.KeyBuilder;
+// import javacard.security.AESKey;
 
 public class CryptoKey extends Applet implements ISO7816
 {
-	private static final short ZERO = (short)0;
-	private static final short SIXTEEN = (short)16;
+	private static final short ZERO       = (short)0;
+	private static final short SIXTEEN    = (short)16;
+	private static final short THIRTY_TWO = (short)32;
 	private static final short SIXTY_FOUR = (short)64;
 
 	private static final short SW_PIN_TRIES_REMAINING      = (short)0x63C0; // See ISO 7816-4 section 7.5.1
 	private static final short SW_ARRAY_INDEX_OUT_OF_RANGE = (short)0x6703;
 
 	private static final short SW_CRYPTO_EXCEPTION                = (short)0x6600;
-	private static final short SW_CRYPTO_SHARED_CHECKSUM_MISMATCH = (short)0x6606;
+	// private static final short SW_CRYPTO_SHARED_CHECKSUM_MISMATCH = (short)0x6606;
 
 	/* Constant values */
 	private static final byte INS_GET_DATA				= (byte)0xCA;
 	private static final byte INS_VERIFY                = (byte)0x20;
-	private static final byte INS_OPEN_SM               = (byte)0x22;
+	private static final byte INS_GEN_SHARED_SECRET     = (byte)0x22;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte)0x25;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte)0x2D;
 
@@ -43,13 +44,17 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte PIN_MIN_LENGTH            = (byte)0x04;
 	private static final byte PIN_MAX_LENGTH            = (byte)0x10;
 	
-	private static final short APPLET_STATE_OFFSET_SM      = (short)0x00;
-	private static final byte  APPLET_STATE_SM_ESTABLISHED = (byte)0xA5;
+	/** Offsets within byte[] appletState array*/
+	private static final short OFFSET_APP_STATE_SM      = (short)0x00;
+	private static final short OFFSET_APP_STATE_PIN     = (short)0x01;
+
+	/** Secure Messaging is established. The inverse value designates opposite state. */
+	private static final byte  APP_STATE_SM_ESTABLISHED = (byte)0xA5;
 
 	/** No restrictions */
 	private static final byte APP_STATE_CREATION        = (byte)0x01;
 	
-	/** PUK set, but PIN not set yet. */
+	/** PUK is set, but PIN not set yet. */
 	private static final byte APP_STATE_INITIALIZATION  = (byte)0x02;
 
 	/** PIN is set. data is secured. */
@@ -94,11 +99,11 @@ public class CryptoKey extends Applet implements ISO7816
 	private KeyAgreement ecDhPlain;
 	private byte[]       sharedSecret;
 
-	private AESKey aesEphem;
-	private Cipher aesENC;
-	private Cipher aesDEC;
+	// private AESKey aesEphem;
+	// private Cipher aesENC;
+	// private Cipher aesDEC;
 
-	private RandomData rand;
+	// private RandomData rand;
 
 	public CryptoKey()
 	{
@@ -110,15 +115,16 @@ public class CryptoKey extends Applet implements ISO7816
 		TOKEN_LABEL[0] = (byte)0;
 		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
 		sharedSecret   = JCSystem.makeTransientByteArray(SIXTY_FOUR, JCSystem.CLEAR_ON_RESET);
-		aesEphem       = (AESKey)KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, KeyBuilder.LENGTH_AES_128, false);
-		aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
-		aesDEC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
-		rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
+		// aesEphem       = (AESKey)KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, KeyBuilder.LENGTH_AES_128, false);
+		// aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		// aesDEC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		// rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 
-		appletState    = JCSystem.makeTransientByteArray((short)1, JCSystem.CLEAR_ON_RESET);
+		appletState    = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
 
 		LCS = APP_STATE_CREATION;
-		appletState[APPLET_STATE_OFFSET_SM] = ~APPLET_STATE_SM_ESTABLISHED;
+		appletState[OFFSET_APP_STATE_SM] = ~APP_STATE_SM_ESTABLISHED;
+		appletState[OFFSET_APP_STATE_PIN] = ZERO;
 	}
 
 	public static void install(byte[] bArray, short bOffset, byte bLength)
@@ -129,7 +135,8 @@ public class CryptoKey extends Applet implements ISO7816
 	public void	process(APDU apdu) throws ISOException
 	{
 		if (selectingApplet()) {
-			appletState[APPLET_STATE_OFFSET_SM] = ~APPLET_STATE_SM_ESTABLISHED;
+			appletState[OFFSET_APP_STATE_SM]  = ~APP_STATE_SM_ESTABLISHED;
+			appletState[OFFSET_APP_STATE_PIN] = ZERO;
 			return;
 		}
 
@@ -159,8 +166,8 @@ public class CryptoKey extends Applet implements ISO7816
 				case INS_VERIFY: {
 					le = verify(buff, cdataOff, lc);
 				} break;
-				case INS_OPEN_SM: {
-					le = openSecureMessagingSession(buff, cdataOff, lc);
+				case INS_GEN_SHARED_SECRET: {
+					le = generateSharedSecret(buff, cdataOff, lc);
 				} break;
 				case INS_CHANGE_REFERENCE_DATA: {
 					le = changeReferenceData(buff, cdataOff, lc);
@@ -290,7 +297,6 @@ public class CryptoKey extends Applet implements ISO7816
 	private short verify(byte[] buff, short cdataOff, short lc)
 	{
 		byte p1 = buff[OFFSET_P1];
-		byte p2 = buff[OFFSET_P2];
 
 		byte appState = LCS;
 
@@ -298,7 +304,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if (p1 != ZERO || p2 != (byte)0x01) {
+		if (p1 != ZERO) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
@@ -316,13 +322,16 @@ public class CryptoKey extends Applet implements ISO7816
 
 		// Check the PIN.
 		if (!pin.check(buff, cdataOff, (byte)lc)) {
-
+			
+			appletState[OFFSET_APP_STATE_PIN] = ZERO;
 			if (pin.getTriesRemaining() < (byte)1) {
 				LCS = APP_STATE_DEACTIVATED;
 			}
 
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
 		}
+
+		appletState[OFFSET_APP_STATE_PIN] = ~ZERO;
 		return ZERO;
 	}
 
@@ -401,54 +410,26 @@ public class CryptoKey extends Applet implements ISO7816
 	 * @param lc
 	 * @return
 	 */
-	private short openSecureMessagingSession(byte[] buff, short cdataOff, short lc)
+	private short generateSharedSecret(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
 		byte p1 = ZERO;
 
 		p1 = buff[OFFSET_P1];
-		appletState[APPLET_STATE_OFFSET_SM] = ~APPLET_STATE_SM_ESTABLISHED;
+		appletState[OFFSET_APP_STATE_SM] = ~APP_STATE_SM_ESTABLISHED;
 		
-		if (LCS != APP_STATE_ACTIVATED) {
+		if (LCS != APP_STATE_ACTIVATED || appletState[OFFSET_APP_STATE_PIN] != ~ZERO) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		switch (p1) {
-			case (byte)0x00: // generate shared secret and return vsrd's public key
-				
-				// generate a shared secret by means of host's public key
-				ecDhPlain.generateSecret(buff, cdataOff, lc, sharedSecret, ZERO);
-				
-				// sent back the public key
-				le = ecFPpubKey.getW(buff, ZERO);
+		// generate a shared secret by means of host's public key
+		ecDhPlain.generateSecret(buff, cdataOff, lc, sharedSecret, ZERO);
+		
+		// sent back the public key...
+		le = ecFPpubKey.getW(buff, ZERO);
 
-				// Use the first bytes of the shared secret as AES key.
-				aesEphem.setKey(sharedSecret, ZERO);
-
-				// Initialize aes ciphers.
-				aesENC.init(aesEphem, Cipher.MODE_ENCRYPT);
-				aesDEC.init(aesEphem, Cipher.MODE_DECRYPT);
-			break;
-			case (byte)0x01: // return to the host a byte array with random value
-				// generate a random value and send it to the host.
-				rand.generateData(sharedSecret, ZERO, SIXTEEN);
-				le = Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, ZERO, SIXTEEN);
-			break;
-			case (byte)0x02: // check the cryptogram
-				// Restore the random value
-				aesDEC.doFinal(buff, cdataOff, SIXTEEN, buff, (short)(cdataOff + SIXTEEN));
-				
-				// compare the result of the previous operation with a value, stored in sharedSecret buffer
-				if (Util.arrayCompare(buff, (short)(cdataOff + SIXTEEN), sharedSecret, ZERO, lc) == ZERO) {
-					appletState[APPLET_STATE_OFFSET_SM] = APPLET_STATE_SM_ESTABLISHED;
-				} else {
-					ISOException.throwIt(SW_CRYPTO_SHARED_CHECKSUM_MISMATCH);
-				}
-
-				buff[ZERO] = appletState[APPLET_STATE_OFFSET_SM];
-				le = (short)1;
-			break;
-		}
+		// ...followed by card's shared secret.
+		le = Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, le, THIRTY_TWO);
 
 		return le;
 	}

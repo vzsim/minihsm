@@ -35,5 +35,5 @@ ls
 
 #02_get_data_test
 03_change_refdata_test
-#04_verify_test
+04_verify_test
 #05_reset_PIN_test
