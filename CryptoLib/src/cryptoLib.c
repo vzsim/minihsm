@@ -10,54 +10,54 @@ static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
 static CK_ULONG ulPinLenMin = 0;
 static CK_ULONG ulPinLenMax = 0;
 
-static Apdu_t apduHdlr;
+static Apdu_t apdu;
 
 static void
-fetch_sw(Apdu_t* apduHdlr)
+fetch_sw(Apdu_t* apdu)
 {
-	apduHdlr->sw = ((((uint16_t)apduHdlr->resp[apduHdlr->respLen - 2] << 8) & 0xFF00)
-					|((uint16_t)apduHdlr->resp[apduHdlr->respLen - 1]       & 0x00FF));
+	apdu->sw = ((((uint16_t)apdu->resp[apdu->respLen - 2] << 8) & 0xFF00)
+					|((uint16_t)apdu->resp[apdu->respLen - 1]       & 0x00FF));
 }
 
 static int32_t
-transmit(Apdu_t* apduHdlr)
+transmit(Apdu_t* apdu)
 {
 	int32_t rv = 1;
 
 	do {
-		if (apduHdlr->cmdLen > CAPDU_LENGTH) {
+		if (apdu->cmdLen > CAPDU_LENGTH) {
 			break;
 		}
 
-		apduHdlr->respLen = RAPDU_LENGTH;
-		DBG_PRINT_APDU(apduHdlr->cmd, apduHdlr->cmdLen, 1)
+		apdu->respLen = RAPDU_LENGTH;
+		DBG_PRINT_APDU(apdu->cmd, apdu->cmdLen, 1)
 	
-		rv = sc_apdu_transmit(apduHdlr->cmd, apduHdlr->cmdLen, apduHdlr->resp, &apduHdlr->respLen);
-		fetch_sw(apduHdlr);
+		rv = sc_apdu_transmit(apdu->cmd, apdu->cmdLen, apdu->resp, &apdu->respLen);
+		fetch_sw(apdu);
 
-		DBG_PRINT_APDU(apduHdlr->resp, apduHdlr->respLen, 0)
+		DBG_PRINT_APDU(apdu->resp, apdu->respLen, 0)
 	} while (0);
 
 	return rv;
 }
 
 static uint32_t
-get_response(Apdu_t* apduHdlr)
+get_response(Apdu_t* apdu)
 {
 	int32_t rv = 0;
-	apduHdlr->cmdLen = 5;
+	apdu->cmdLen = 5;
 	uint8_t get_resp[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
 
 	do {
-		if (0x6100 != (apduHdlr->sw & 0xFF00)) {
+		if (0x6100 != (apdu->sw & 0xFF00)) {
 			break;
 		}
 		
-		get_resp[4] = apduHdlr->sw & 0x00FF;
-		memcpy(apduHdlr->cmd, get_resp, apduHdlr->cmdLen);
+		get_resp[4] = apdu->sw & 0x00FF;
+		memcpy(apdu->cmd, get_resp, apdu->cmdLen);
 
 		rv = 1;
-		if (transmit(apduHdlr)) {
+		if (transmit(apdu)) {
 			break;
 		}
 
@@ -88,7 +88,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 			break;
 		}
 			
-		if (sc_card_connect(&apduHdlr.protocol)){
+		if (sc_card_connect(&apdu.protocol)){
 			break;
 		}
 			
@@ -169,6 +169,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetFunctionList)(CK_FUNCTION_LIST_PTR_PTR ppFunction
 	return CKR_OK;
 }
 
+
 CK_DEFINE_FUNCTION(CK_RV, C_GetSlotList)(CK_BBOOL tokenPresent, CK_SLOT_ID_PTR pSlotList, CK_ULONG_PTR pulCount)
 {
 	DBG_PRINT_FUNC_NAME("C_GetSlotList")
@@ -246,25 +247,25 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 
 		rv = CKR_FUNCTION_FAILED;
 
-		apduHdlr.cmdLen = 11;
-		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
-		if (transmit(&apduHdlr))
+		apdu.cmdLen = 11;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
+		if (transmit(&apdu))
 			break;
 
-		if (get_response(&apduHdlr))
+		if (get_response(&apdu))
 			break;
 		
-		apduHdlr.cmdLen = 5;
-		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xCA, 0x00, 0xFF, 0x00}, apduHdlr.cmdLen);
-		if (transmit(&apduHdlr))
+		apdu.cmdLen = 5;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xCA, 0x00, 0xFF, 0x00}, apdu.cmdLen);
+		if (transmit(&apdu))
 			break;
 		
-		if (get_response(&apduHdlr))
+		if (get_response(&apdu))
 			break;
 		
 		int32_t offset = 0;
 		int32_t len = 0;
-		uint8_t flags = apduHdlr.resp[offset++];
+		uint8_t flags = apdu.resp[offset++];
 
 		switch (flags) {
 			case 0x01: // LCS CREATION
@@ -285,33 +286,33 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		pInfo->hardwareVersion.major = 0x01;
 		pInfo->hardwareVersion.minor = 0x00;
 
-		pInfo->firmwareVersion.major = apduHdlr.resp[offset++];
-		pInfo->firmwareVersion.minor = apduHdlr.resp[offset++];
+		pInfo->firmwareVersion.major = apdu.resp[offset++];
+		pInfo->firmwareVersion.minor = apdu.resp[offset++];
 
-		ulPinLenMin = apduHdlr.resp[offset++];
-		ulPinLenMax = apduHdlr.resp[offset++];
+		ulPinLenMin = apdu.resp[offset++];
+		ulPinLenMax = apdu.resp[offset++];
 
 		pInfo->ulMinPinLen = ulPinLenMin;
 		pInfo->ulMaxPinLen = ulPinLenMax;
 		
-		len = apduHdlr.resp[offset++];
+		len = apdu.resp[offset++];
 		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
-		memcpy(pInfo->manufacturerID, &apduHdlr.resp[offset], len);
+		memcpy(pInfo->manufacturerID, &apdu.resp[offset], len);
 
 		offset += len;
-		len = apduHdlr.resp[offset++];
+		len = apdu.resp[offset++];
 		memset(pInfo->label, ' ', sizeof(pInfo->label));
-		memcpy(pInfo->label, &apduHdlr.resp[offset], len);
+		memcpy(pInfo->label, &apdu.resp[offset], len);
 
 		offset += len;
-		len = apduHdlr.resp[offset++];
+		len = apdu.resp[offset++];
 		memset(pInfo->model, ' ', sizeof(pInfo->model));
-		memcpy(pInfo->model, &apduHdlr.resp[offset], len);
+		memcpy(pInfo->model, &apdu.resp[offset], len);
 
 		offset += len;
-		len = apduHdlr.resp[offset++];
+		len = apdu.resp[offset++];
 		memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
-		memcpy(pInfo->serialNumber, &apduHdlr.resp[offset], len);
+		memcpy(pInfo->serialNumber, &apdu.resp[offset], len);
 
 		pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
 		pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
@@ -449,7 +450,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 }
 
 
-// pkcs11-tool --module ./build/src/libCryptoKey.so --init-token --label "MyHSM" --so-pin "01234"
+// pkcs11-tool --module ./build/src/libCryptoKey.so --init-token --label "SMDP" --so-pin "01234"
 CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen, CK_UTF8CHAR_PTR pLabel)
 {
 	CK_RV rv;
@@ -484,32 +485,32 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 
 		rv = CKR_FUNCTION_FAILED;
 		
-		apduHdlr.cmdLen = 11;
-		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
-		if (transmit(&apduHdlr))
+		apdu.cmdLen = 11;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
+		if (transmit(&apdu))
 			break;
 
-		if (get_response(&apduHdlr))
+		if (get_response(&apdu))
 			break;
 		
-		apduHdlr.cmdLen = 5;
-		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x02, 0x00}, apduHdlr.cmdLen);
+		apdu.cmdLen = 5;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x02, 0x00}, apdu.cmdLen);
 
 		uint32_t labelLen = strlen((const char *)pLabel);
-		apduHdlr.cmd[4] = labelLen + ulPinLen + 4;	// '+ 4' - for tag and length fields of TLVs
-		apduHdlr.cmdLen += apduHdlr.cmd[4];
+		apdu.cmd[4] = labelLen + ulPinLen + 4;	// '+ 4' - for tag and length fields of TLVs
+		apdu.cmdLen += apdu.cmd[4];
 
-		apduHdlr.cmd[5] = 0x81;
-		apduHdlr.cmd[6] = ulPinLen;
-		memcpy(&apduHdlr.cmd[7], pPin, ulPinLen);
+		apdu.cmd[5] = 0x81;
+		apdu.cmd[6] = ulPinLen;
+		memcpy(&apdu.cmd[7], pPin, ulPinLen);
 
-		apduHdlr.cmd[7 + ulPinLen] = 0x82;
-		apduHdlr.cmd[8 + ulPinLen] = labelLen;
-		memcpy(&apduHdlr.cmd[9 + ulPinLen], pLabel, labelLen);
-		if (transmit(&apduHdlr))
+		apdu.cmd[7 + ulPinLen] = 0x82;
+		apdu.cmd[8 + ulPinLen] = labelLen;
+		memcpy(&apdu.cmd[9 + ulPinLen], pLabel, labelLen);
+		if (transmit(&apdu))
 			break;
 
-		if (get_response(&apduHdlr))
+		if (get_response(&apdu))
 			break;
 		
 		rv = CKR_OK;
@@ -548,28 +549,28 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR
 		
 		rv = CKR_FUNCTION_FAILED;
 		
-		apduHdlr.cmdLen = 11;
-		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apduHdlr.cmdLen);
-		if (transmit(&apduHdlr))
+		apdu.cmdLen = 11;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
+		if (transmit(&apdu))
 			break;
 
-		if (get_response(&apduHdlr))
+		if (get_response(&apdu))
 			break;
 		
-		apduHdlr.cmdLen = 5;	// INIT PIN
-		memcpy(apduHdlr.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x01, 0x00}, apduHdlr.cmdLen);
+		apdu.cmdLen = 5;	// INIT PIN
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x01, 0x00}, apdu.cmdLen);
 
-		apduHdlr.cmd[4] = ulPinLen + 2;	// '+ 2' - for tag and length fields of TLVs
-		apduHdlr.cmdLen += apduHdlr.cmd[4];
+		apdu.cmd[4] = ulPinLen + 2;	// '+ 2' - for tag and length fields of TLVs
+		apdu.cmdLen += apdu.cmd[4];
 
-		apduHdlr.cmd[5] = 0x81;
-		apduHdlr.cmd[6] = ulPinLen;
+		apdu.cmd[5] = 0x81;
+		apdu.cmd[6] = ulPinLen;
 		
-		memcpy(&apduHdlr.cmd[7], pPin, ulPinLen);
-		if (transmit(&apduHdlr))
+		memcpy(&apdu.cmd[7], pPin, ulPinLen);
+		if (transmit(&apdu))
 			break;
 
-		if (get_response(&apduHdlr))
+		if (get_response(&apdu))
 			break;
 		
 		rv = CKR_OK;
@@ -774,36 +775,54 @@ CK_DEFINE_FUNCTION(CK_RV, C_Login)(CK_SESSION_HANDLE hSession, CK_USER_TYPE user
 	if ((ulPinLen < ulPinLenMin) || (ulPinLen > ulPinLenMax))
 		return CKR_PIN_LEN_RANGE;
 
+#if (0)
 	switch (pkcs11_session_state)
 	{
 		case CKS_RO_PUBLIC_SESSION:
-
 			if (CKU_SO == userType)
 				rv = CKR_SESSION_READ_ONLY_EXISTS;
 			else
 				pkcs11_session_state = CKS_RO_USER_FUNCTIONS;
-
-			break;
-
+		break;
 		case CKS_RO_USER_FUNCTIONS:
 		case CKS_RW_USER_FUNCTIONS:
-
 			rv = (CKU_SO == userType) ? CKR_USER_ANOTHER_ALREADY_LOGGED_IN : CKR_USER_ALREADY_LOGGED_IN;
-
-			break;
-
+		break;
 		case CKS_RW_PUBLIC_SESSION:
-
 			pkcs11_session_state = (CKU_SO == userType) ? CKS_RW_SO_FUNCTIONS : CKS_RW_USER_FUNCTIONS;
-
-			break;
-
+		break;
 		case CKS_RW_SO_FUNCTIONS:
-
 			rv = (CKU_SO == userType) ? CKR_USER_ALREADY_LOGGED_IN : CKR_USER_ANOTHER_ALREADY_LOGGED_IN;
-
-			break;
+		break;
 	}
+#endif
+
+	do {
+		rv = CKR_FUNCTION_FAILED;
+			
+		apdu.cmdLen = 11;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
+		if (transmit(&apdu))
+			break;
+	
+		if (get_response(&apdu))
+			break;
+		
+		apdu.cmdLen = 5;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0x20, 0x00, 0x00, 0x00}, apdu.cmdLen);
+	
+		apdu.cmd[4]  = ulPinLen;
+		apdu.cmdLen += ulPinLen;
+		
+		memcpy(&apdu.cmd[5], pPin, ulPinLen);
+		if (transmit(&apdu))
+			break;
+	
+		if (get_response(&apdu))
+			break;
+		
+		rv = CKR_OK;
+	} while (0);
 
 	return rv;
 }
@@ -811,6 +830,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Login)(CK_SESSION_HANDLE hSession, CK_USER_TYPE user
 
 CK_DEFINE_FUNCTION(CK_RV, C_Logout)(CK_SESSION_HANDLE hSession)
 {
+	CK_RV rv = CKR_OK;
 	DBG_PRINT_FUNC_NAME("C_Logout")
 
 	if (CK_FALSE == pkcs11_initialized)
@@ -822,7 +842,29 @@ CK_DEFINE_FUNCTION(CK_RV, C_Logout)(CK_SESSION_HANDLE hSession)
 	if ((pkcs11_session_state == CKS_RO_PUBLIC_SESSION) || (pkcs11_session_state == CKS_RW_PUBLIC_SESSION))
 		return CKR_USER_NOT_LOGGED_IN;
 
-	return CKR_OK;
+	do {
+		rv = CKR_FUNCTION_FAILED;
+			
+		apdu.cmdLen = 11;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
+		if (transmit(&apdu))
+			break;
+	
+		if (get_response(&apdu))
+			break;
+		
+		apdu.cmdLen = 5;
+		memcpy(apdu.cmd, (uint8_t[]){0x00, 0x20, 0xFF, 0x00, 0x00}, apdu.cmdLen);
+		if (transmit(&apdu))
+			break;
+	
+		if (get_response(&apdu))
+			break;
+		
+		rv = CKR_OK;
+	} while (0);
+
+	return rv;
 }
 
 

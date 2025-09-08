@@ -304,13 +304,18 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if (p1 != ZERO) {
+		if (p1 != ZERO && p1 != ~ZERO) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
 		// At the CREATION and INITIALIZATION states no PIN is set yet, thus there is no error at all.
 		if (lc == ZERO && (appState <= APP_STATE_INITIALIZATION)) {
 			ISOException.throwIt(SW_NO_ERROR);
+		} else if ((p1 == ~ZERO) && (lc == ZERO) && (appState == APP_STATE_ACTIVATED)) {
+			// Set verification status to 'not verified'
+			appletState[OFFSET_APP_STATE_PIN] = ZERO;
+			ISOException.throwIt(SW_NO_ERROR);
+			
 		} else if (lc == ZERO && (appState == APP_STATE_ACTIVATED)) {
 			// The absence of CDATA means that a user requested the number of remaining tries.
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));

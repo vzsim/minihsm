@@ -11,7 +11,7 @@ target_include_directories(${ENTRY_POINT}
 )
 
 add_compile_definitions(
-#	CRYPTOKI_DEBUG
+	CRYPTOKI_DEBUG
 )
 
 if(CMAKE_HOST_APPLE)

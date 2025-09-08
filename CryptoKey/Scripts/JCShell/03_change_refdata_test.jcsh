@@ -46,8 +46,8 @@ if ${last.response.status} != 9000
 end
 
 /echo ""
-/echo "CHANGE REF DATA: set PUK and Applet Label"
-/send 00250102#(81#(303132333435)82#(4D7948534D206170706C6574))
+/echo "CHANGE REF DATA: set PUK and Applet Label 'SMDP'"
+/send 00250102#(81#(303132333435)82#(534D4450))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
