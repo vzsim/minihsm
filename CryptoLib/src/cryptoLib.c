@@ -2425,8 +2425,25 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 	return CKR_OK;
 }
 
-
-CK_DEFINE_FUNCTION(CK_RV, C_GenerateKeyPair)(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_ATTRIBUTE_PTR pPublicKeyTemplate, CK_ULONG ulPublicKeyAttributeCount, CK_ATTRIBUTE_PTR pPrivateKeyTemplate, CK_ULONG ulPrivateKeyAttributeCount, CK_OBJECT_HANDLE_PTR phPublicKey, CK_OBJECT_HANDLE_PTR phPrivateKey)
+/**
+ * @brief generates a public/private key pair, creating new key objects.
+ * @param hSession  is the session’s handle
+ * @param pMechanism the key generation mechanism
+ * @param pPublicKeyTemplate the template for the public key
+ * @param ulPublicKeyAttributeCount the number of attributes in the public-key template
+ * @param pPrivateKeyTemplate the template for the private key
+ * @param ulPrivateKeyAttributeCount the number of attributes in the private-key template
+ * @param phPublicKey the location that receives the handle of the new public key
+ * @param phPrivateKey the location that receives the handle of the new private key
+ */
+CK_DEFINE_FUNCTION(CK_RV, C_GenerateKeyPair)(CK_SESSION_HANDLE hSession,
+											CK_MECHANISM_PTR pMechanism,
+											CK_ATTRIBUTE_PTR pPublicKeyTemplate,
+											CK_ULONG ulPublicKeyAttributeCount,
+											CK_ATTRIBUTE_PTR pPrivateKeyTemplate,
+											CK_ULONG ulPrivateKeyAttributeCount,
+											CK_OBJECT_HANDLE_PTR phPublicKey,
+											CK_OBJECT_HANDLE_PTR phPrivateKey)
 {
 	CK_ULONG i = 0;
 
@@ -2439,9 +2456,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKeyPair)(CK_SESSION_HANDLE hSession, CK_MECH
 	if (NULL == pMechanism)
 		return CKR_ARGUMENTS_BAD;
 
-	if (CKM_RSA_PKCS_KEY_PAIR_GEN != pMechanism->mechanism)
+	if (CKM_ECDSA_KEY_PAIR_GEN != pMechanism->mechanism)
 		return CKR_MECHANISM_INVALID;
-
+	
 	if ((NULL != pMechanism->pParameter) || (0 != pMechanism->ulParameterLen))
 		return CKR_MECHANISM_PARAM_INVALID;
 
