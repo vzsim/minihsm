@@ -316,7 +316,7 @@ public class CryptoKey extends Applet implements ISO7816
 
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
-		short cmd  = (short)(((short)p1 << 8) | (short)p2);
+		short cmd  = (short)(((short)p1 << (short)8) | ((short)p2 & (short)0x00FF));
 
 		// The ISO 7816-8, clause 5.3.1 states: "for this command, when verification related operation
 		// is considered, SW1-SW2 set to '6300' or '63CX' indicates that a verification failed."
@@ -527,28 +527,7 @@ public class CryptoKey extends Applet implements ISO7816
 		return offset;
 	}
 
-
-	private boolean isCase3Case4Command(short cmd)
-	{
-		boolean result;
-
-		switch (cmd) {
-			case (short)0x2A80:
-			case (short)0x2A84:
-			case (short)0x2000: // verify
-			case (short)0x2200: // Establish SM: generate shared
-			case (short)0x2500:	// change ref data
-			case (short)0x2501:	// change ref data
-			case (short)0x2D00: // reset retry counter: activate card and set new PIN
-			case (short)0x2D01: // reset retry counter: activate card and reset PIN
-				result = true;
-			break;
-			default: result = false;
-		}
-		return result;
-	}
-
-
+	
 	/**
 	 * Performs encryption of the input data using an algorithm specified in ... (TODO)
 	 * 
@@ -582,4 +561,27 @@ public class CryptoKey extends Applet implements ISO7816
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
+
+
+	private boolean isCase3Case4Command(short cmd)
+	{
+		boolean result;
+
+		switch (cmd) {
+			case (short)0x2A80: // PSO decrypt
+			case (short)0x2A84: // PSO encrypt
+			case (short)0x2000: // verify
+			case (short)0x2200: // Establish SM: generate shared
+			case (short)0x2500:	// change ref data
+			case (short)0x2501:	// change ref data
+			case (short)0x2D00: // reset retry counter: activate card and set new PIN
+			case (short)0x2D01: // reset retry counter: activate card and reset PIN
+				result = true;
+			break;
+			default: result = false;
+		}
+		return result;
+	}
+
+
 }
