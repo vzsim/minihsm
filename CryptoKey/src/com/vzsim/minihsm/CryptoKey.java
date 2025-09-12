@@ -14,10 +14,10 @@ import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyPair;
-// import javacard.security.RandomData;
-// import javacardx.crypto.Cipher;
-// import javacard.security.KeyBuilder;
-// import javacard.security.AESKey;
+import javacard.security.RandomData;
+import javacardx.crypto.Cipher;
+import javacard.security.KeyBuilder;
+import javacard.security.AESKey;
 
 public class CryptoKey extends Applet implements ISO7816
 {
@@ -98,13 +98,13 @@ public class CryptoKey extends Applet implements ISO7816
 	private ECPrivateKey ecFPprivKey;
 	private ECPublicKey  ecFPpubKey;
 	private KeyAgreement ecDhPlain;
-	private byte[]       sharedSecret;
+	private byte[]       tempRamBuff;
 
-	// private AESKey aesEphem;
-	// private Cipher aesENC;
-	// private Cipher aesDEC;
+	private AESKey aesKey16;
+	private Cipher aesEncCbcm1;
+	private Cipher aesDecCbcm1;
 
-	// private RandomData rand;
+	private RandomData rand;
 
 	public CryptoKey()
 	{
@@ -115,11 +115,11 @@ public class CryptoKey extends Applet implements ISO7816
 		TOKEN_LABEL    = new byte[33];
 		TOKEN_LABEL[0] = (byte)0;
 		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
-		sharedSecret   = JCSystem.makeTransientByteArray(SIXTY_FOUR, JCSystem.CLEAR_ON_RESET);
-		// aesEphem       = (AESKey)KeyBuilder.buildKey(KeyBuilder.ALG_TYPE_AES, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, KeyBuilder.LENGTH_AES_128, false);
-		// aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
-		// aesDEC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
-		// rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
+		tempRamBuff    = JCSystem.makeTransientByteArray((short)(SIXTY_FOUR * (short)4), JCSystem.CLEAR_ON_RESET);
+		aesKey16       = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+		aesEncCbcm1    = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		aesDecCbcm1    = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 
 		appletState    = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
 
@@ -175,7 +175,7 @@ public class CryptoKey extends Applet implements ISO7816
 				} break;
 				case INS_PSO: {
 					le = performSecurityOperation(buff, cdataOff, lc);
-				}
+				} break;
 				case INS_RESET_RETRY_COUNTER: {
 					le = resetRetryCounter(buff, cdataOff, lc);
 				} break;
@@ -261,6 +261,14 @@ public class CryptoKey extends Applet implements ISO7816
 				ecFPpubKey  = (ECPublicKey)ecFPPair.getPublic();
 				ecDhPlain.init(ecFPprivKey);
 
+				rand.generateData(tempRamBuff, ZERO, SIXTEEN);
+				// Use the first bytes of the shared secret as AES key.
+				aesKey16.setKey(tempRamBuff, ZERO);
+
+				// Initialize aes ciphers.
+				aesEncCbcm1.init(aesKey16, Cipher.MODE_ENCRYPT);
+				aesDecCbcm1.init(aesKey16, Cipher.MODE_DECRYPT);
+
 				LCS = APP_STATE_ACTIVATED;
 				
 			} break;
@@ -293,6 +301,15 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 
+	/**
+	 * PERFORM SECURITY OPERATION (INS = 0x2A), ISO 7816-8, clause 5.3.
+	 * 
+	 * 
+	 * @param buff
+	 * @param cdataOff
+	 * @param lc
+	 * @return
+	 */
 	private short performSecurityOperation(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
@@ -305,18 +322,20 @@ public class CryptoKey extends Applet implements ISO7816
 		// is considered, SW1-SW2 set to '6300' or '63CX' indicates that a verification failed."
 		// TODO: we need to specify what commads that paragraph talk about. Till that moment is't assumed
 		// that ALL commands might be performed only after PIN verification.
-		if (LCS != APP_STATE_ACTIVATED || appletState[OFFSET_APP_STATE_PIN] != ~ZERO) {
-			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
+		if (LCS != APP_STATE_ACTIVATED && appletState[OFFSET_APP_STATE_PIN] != ~ZERO) {
+			ISOException.throwIt(SW_SECURITY_STATUS_NOT_SATISFIED);
 		}
 
-
 		switch (cmd) {
-			case (short)0x8480: {
-				le = encipher(buff, cdataOff, lc);
-			} break;
-			case (short)0x8084: {
+			case (short)0x8084: { // ISO 7816-8, clause 5.3.9
 				le = decipher(buff, cdataOff, lc);
 			} break;
+			case (short)0x8480: { // ISO 7816-8, clause 5.3.8
+				le = encipher(buff, cdataOff, lc);
+			} break;
+			default: {
+				ISOException.throwIt(SW_FUNC_NOT_SUPPORTED);
+			}
 		}
 		return le;
 	}
@@ -455,19 +474,24 @@ public class CryptoKey extends Applet implements ISO7816
 	private short generateSharedSecret(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		
+		byte p1 = buff[OFFSET_P1];
+
+		if (p1 != ZERO) {
+			ISOException.throwIt(SW_INCORRECT_P1P2);
+		}
+
 		if (LCS != APP_STATE_ACTIVATED || appletState[OFFSET_APP_STATE_PIN] != ~ZERO) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
 		// generate a shared secret by means of host's public key
-		ecDhPlain.generateSecret(buff, cdataOff, lc, sharedSecret, ZERO);
+		ecDhPlain.generateSecret(buff, cdataOff, lc, tempRamBuff, ZERO);
 		
 		// Fetch the public key to be sent back
 		le = ecFPpubKey.getW(buff, ZERO);
 
 		// copy card's shared secret into the outgoing buffer.
-		le = Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, le, THIRTY_TWO);
+		le = Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, le, THIRTY_TWO);
 
 		return le;
 	}
@@ -509,9 +533,10 @@ public class CryptoKey extends Applet implements ISO7816
 		boolean result;
 
 		switch (cmd) {
+			case (short)0x2A80:
+			case (short)0x2A84:
 			case (short)0x2000: // verify
 			case (short)0x2200: // Establish SM: generate shared
-			case (short)0x2202: // Establish SM: check the cryptogram
 			case (short)0x2500:	// change ref data
 			case (short)0x2501:	// change ref data
 			case (short)0x2D00: // reset retry counter: activate card and set new PIN
@@ -522,6 +547,7 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		return result;
 	}
+
 
 	/**
 	 * Performs encryption of the input data using an algorithm specified in ... (TODO)
@@ -536,7 +562,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private short encipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-
+		le = aesEncCbcm1.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
+		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
 
@@ -551,7 +578,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private short decipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-
+		le = aesDecCbcm1.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
+		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
 }
