@@ -42,15 +42,12 @@ def uncompress(public_key):
 	return '04' + ret_val
 
 
-class DiffHell:
+class AESClass:
 	def __init__(self):
 		self.cipher = None
-		self.secret_key = None
 		self.iv = bytearray(16)
 
 	def init_cipher(self, sk):
-		self.secret_key = sk
-		# print("Host secret key: ", self.secret_key)
 		self.cipher = Cipher(algorithms.AES(sk), modes.CBC(self.iv))
 	
 	def encrypt_msg(self, plain_text: bytes):
@@ -69,7 +66,7 @@ def main_func():
 	global context
 	global card
 	global protocol
-	dh = DiffHell()
+	dh = AESClass()
 
 	context, card, protocol = pcsc.openCardAnyReader(readers_list)
 

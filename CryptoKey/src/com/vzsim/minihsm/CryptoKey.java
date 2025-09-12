@@ -326,6 +326,10 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_SECURITY_STATUS_NOT_SATISFIED);
 		}
 
+		if (lc == ZERO) {
+			ISOException.throwIt(SW_WRONG_LENGTH);
+		}
+
 		switch (cmd) {
 			case (short)0x8084: { // ISO 7816-8, clause 5.3.9
 				le = decipher(buff, cdataOff, lc);
@@ -558,6 +562,18 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		short le = ZERO;
 		le = aesDecCbcm1.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
+		if (le == ZERO) {
+			ISOException.throwIt((short)0x90FF);
+		}
+
+		if (lc == ZERO) {
+			ISOException.throwIt((short)0x90FE);
+		}
+
+		if (cdataOff != OFFSET_CDATA) {
+			ISOException.throwIt((short)0x90FD);
+		}
+		
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
