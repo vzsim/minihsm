@@ -74,10 +74,10 @@ def main_func():
 	trn(pcsc.asciiToHex('00200000') + ln('3131313131'),   expsw = 0x9000, descr = 'Verify PIN')
 	
 	dh.init_cipher(dh.iv)
-	response = trn(pcsc.asciiToHex('002A8480') + ln('00000000000000000000000000000000'), expsw = 0x9000, descr = 'PSO: AES encrypt')
+	response = trn(pcsc.asciiToHex('002A8084') + ln('00000000000000000000000000000000'), expsw = 0x9000, descr = 'PSO: AES encrypt')
 	print("cipher text: ", hexToAscii(response[:-2]))
 
-	response = trn(pcsc.asciiToHex('002A8084') + ln(hexToAscii(response[:-2])), expsw = 0x9000, descr = 'PSO: AES decrypt')
+	response = trn(pcsc.asciiToHex('002A8480') + ln(hexToAscii(response[:-2])), expsw = 0x9000, descr = 'PSO: AES decrypt')
 	print("plain text: ", hexToAscii(response[:-2]))
 
 	pcsc.disconnect(card)

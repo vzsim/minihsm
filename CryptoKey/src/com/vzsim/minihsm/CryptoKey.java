@@ -561,10 +561,9 @@ public class CryptoKey extends Applet implements ISO7816
 	private short decipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		Util.arrayFillNonAtomic(tempRamBuff, ZERO, (short)(SIXTY_FOUR * (short)4), (byte)0xFF);
 		le = aesDecCbcm1.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
-		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, (short)(SIXTY_FOUR * (short)4));
-		return (short)(SIXTY_FOUR * (short)4);
+		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
+		return le;
 	}
 
 
