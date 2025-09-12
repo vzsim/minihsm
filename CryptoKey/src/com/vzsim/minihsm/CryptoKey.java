@@ -37,6 +37,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte INS_VERIFY                = (byte)0x20;
 	private static final byte INS_GEN_SHARED_SECRET     = (byte)0x22;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte)0x25;
+	private static final byte INS_PSO                   = (byte)0x2A;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte)0x2D;
 
 	private static final byte PIN_MAX_TRIES             = (byte)0x03;
@@ -172,6 +173,9 @@ public class CryptoKey extends Applet implements ISO7816
 				case INS_CHANGE_REFERENCE_DATA: {
 					le = changeReferenceData(buff, cdataOff, lc);
 				} break;
+				case INS_PSO: {
+					le = performSecurityOperation(buff, cdataOff, lc);
+				}
 				case INS_RESET_RETRY_COUNTER: {
 					le = resetRetryCounter(buff, cdataOff, lc);
 				} break;
@@ -191,6 +195,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | reason));
 		}
 	}
+
 
 	/**
 	 * CHANGE REFERENCE DATA (INS = 0x25), ISO 7816-4, clause 11.5.7.
@@ -287,6 +292,36 @@ public class CryptoKey extends Applet implements ISO7816
 		return ZERO;
 	}
 
+
+	private short performSecurityOperation(byte[] buff, short cdataOff, short lc)
+	{
+		short le = ZERO;
+
+		byte p1 = buff[OFFSET_P1];
+		byte p2 = buff[OFFSET_P2];
+		short cmd  = (short)(((short)p1 << 8) | (short)p2);
+
+		// The ISO 7816-8, clause 5.3.1 states: "for this command, when verification related operation
+		// is considered, SW1-SW2 set to '6300' or '63CX' indicates that a verification failed."
+		// TODO: we need to specify what commads that paragraph talk about. Till that moment is't assumed
+		// that ALL commands might be performed only after PIN verification.
+		if (LCS != APP_STATE_ACTIVATED || appletState[OFFSET_APP_STATE_PIN] != ~ZERO) {
+			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
+		}
+
+
+		switch (cmd) {
+			case (short)0x8480: {
+				le = encipher(buff, cdataOff, lc);
+			} break;
+			case (short)0x8084: {
+				le = decipher(buff, cdataOff, lc);
+			} break;
+		}
+		return le;
+	}
+
+
 	/**
 	 * VERIFY (INS = 0x20), ISO 7816-4, clause 11.5.6.
 	 * @param buff
@@ -339,6 +374,7 @@ public class CryptoKey extends Applet implements ISO7816
 		appletState[OFFSET_APP_STATE_PIN] = ~ZERO;
 		return ZERO;
 	}
+
 
 	/**
 	 * RESET RETRY COUNTER (INS = 0x2D), ISO 7816-4, clause 11.5.10.
@@ -408,20 +444,17 @@ public class CryptoKey extends Applet implements ISO7816
 		return ZERO;
 	}
 	
+
 	/**
 	 * GENERATE SHARED SECRET (INS = 0x22), ISO 7816-4, clause 11.5.11.
 	 * @param buff
 	 * @param cdataOff
 	 * @param lc
-	 * @return
+	 * @return 65 bytes of token's public key followed by a shared secret.
 	 */
 	private short generateSharedSecret(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		byte p1 = ZERO;
-
-		p1 = buff[OFFSET_P1];
-		appletState[OFFSET_APP_STATE_SM] = ~APP_STATE_SM_ESTABLISHED;
 		
 		if (LCS != APP_STATE_ACTIVATED || appletState[OFFSET_APP_STATE_PIN] != ~ZERO) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
@@ -430,14 +463,15 @@ public class CryptoKey extends Applet implements ISO7816
 		// generate a shared secret by means of host's public key
 		ecDhPlain.generateSecret(buff, cdataOff, lc, sharedSecret, ZERO);
 		
-		// sent back the public key...
+		// Fetch the public key to be sent back
 		le = ecFPpubKey.getW(buff, ZERO);
 
-		// ...followed by card's shared secret.
+		// copy card's shared secret into the outgoing buffer.
 		le = Util.arrayCopyNonAtomic(sharedSecret, ZERO, buff, le, THIRTY_TWO);
 
 		return le;
 	}
+
 
 	/**
 	 * GET DATA apdu (INS = 0xCA), ISO 7816-4, clause 11.4.3.
@@ -469,6 +503,7 @@ public class CryptoKey extends Applet implements ISO7816
 		return offset;
 	}
 
+
 	private boolean isCase3Case4Command(short cmd)
 	{
 		boolean result;
@@ -486,5 +521,37 @@ public class CryptoKey extends Applet implements ISO7816
 			default: result = false;
 		}
 		return result;
+	}
+
+	/**
+	 * Performs encryption of the input data using an algorithm specified in ... (TODO)
+	 * 
+	 * @apiNote data must be encoded in BER-TLV format.
+	 * 
+	 * @param buff a plaintext.
+	 * @param cdataOff offset within buffer
+	 * @param lc the length on plaintext
+	 * @return the length of cryptogram
+	 */
+	private short encipher(byte[] buff, short cdataOff, short lc)
+	{
+		short le = ZERO;
+
+		return le;
+	}
+
+
+	/**
+	 * Performs decryption of the input data using an algorithm specified in ... (TODO)
+	 * @param buff a cryptogram.
+	 * @param cdataOff offset within buff
+	 * @param lc the length on the cryptogram
+	 * @return the length of plaintext
+	 */
+	private short decipher(byte[] buff, short cdataOff, short lc)
+	{
+		short le = ZERO;
+
+		return le;
 	}
 }
