@@ -30,18 +30,6 @@ def ln(array):
 	return [len(array)] + array
 
 
-def uncompress(public_key):
-	ret_val = hex(public_key.public_numbers().x)[2:] + hex(public_key.public_numbers().y)[2:]
-	ret_val_len = ln(ret_val)[0]
-	
-	# padd the leading zero for the MSB (if required)
-	if ret_val_len == 63:
-		ret_val = '0' + ret_val
-	elif ret_val_len == 62:
-		ret_val = '00' + ret_val
-	return '04' + ret_val
-
-
 class AESClass:
 	def __init__(self):
 		self.cipher = None

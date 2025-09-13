@@ -32,13 +32,17 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final short SW_CRYPTO_EXCEPTION                = (short)0x6600;
 	// private static final short SW_CRYPTO_SHARED_CHECKSUM_MISMATCH = (short)0x6606;
 
-	/* Constant values */
-	private static final byte INS_GET_DATA				= (byte)0xCA;
+	/** The set of supported INStructions */
+	private static final byte INS_GET_DATA              = (byte)0xCA;
 	private static final byte INS_VERIFY                = (byte)0x20;
 	private static final byte INS_GEN_SHARED_SECRET     = (byte)0x22;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte)0x25;
 	private static final byte INS_PSO                   = (byte)0x2A;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte)0x2D;
+	private static final byte INS_DEACTIVATE            = (byte)0x04;
+	private static final byte INS_ACTIVATE              = (byte)0x44;
+	private static final byte INS_TERMINATE             = (byte)0xE6;
+
 
 	private static final byte PIN_MAX_TRIES             = (byte)0x03;
 	private static final byte PUK_MAX_TRIES             = (byte)0x0A;
@@ -53,18 +57,16 @@ public class CryptoKey extends Applet implements ISO7816
 	private static final byte  APP_STATE_SM_ESTABLISHED = (byte)0xA5;
 
 	/** No restrictions */
-	private static final byte APP_STATE_CREATION        = (byte)0x01;
-	
-	/** PUK is set, but PIN not set yet. */
-	private static final byte APP_STATE_INITIALIZATION  = (byte)0x02;
+	private static final byte APP_STATE_INITIALIZATION  = (byte)0x03;
 
-	/** PIN is set. data is secured. */
+	/** Some operations are available only after presenting a PIN. */
 	private static final byte APP_STATE_ACTIVATED       = (byte)0x05;
 
-	/** Applet usage is deactivated. */
+	/** To return the applet to the ACTIVATED state a PUK must be presented. */
 	private static final byte APP_STATE_DEACTIVATED     = (byte)0x04;
 
-	/** Applet usage is terminated. */
+	/** There is no chance to return the applet to the ACTIVATED state.
+	 * The only option left is to erase entire memory by means of presenting the PUK. */
 	private static final byte APP_STATE_TERMINATED      = (byte)0x0C;
 
 	private static final byte API_VERSION_MAJOR			= (byte)0x00;
@@ -101,8 +103,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private byte[]       tempRamBuff;
 
 	private AESKey aesKey16;
-	private Cipher aesEncCbcm1;
-	private Cipher aesDecCbcm1;
+	private Cipher aesENC;
+	private Cipher aesDEC;
 
 	private RandomData rand;
 
@@ -117,13 +119,13 @@ public class CryptoKey extends Applet implements ISO7816
 		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
 		tempRamBuff    = JCSystem.makeTransientByteArray((short)(SIXTY_FOUR * (short)4), JCSystem.CLEAR_ON_RESET);
 		aesKey16       = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-		aesEncCbcm1    = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
-		aesDecCbcm1    = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		aesDEC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
 		rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 
 		appletState    = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
 
-		LCS = APP_STATE_CREATION;
+		LCS = APP_STATE_INITIALIZATION;
 		appletState[OFFSET_APP_STATE_SM] = ~APP_STATE_SM_ESTABLISHED;
 		appletState[OFFSET_APP_STATE_PIN] = ZERO;
 	}
@@ -179,6 +181,11 @@ public class CryptoKey extends Applet implements ISO7816
 				case INS_RESET_RETRY_COUNTER: {
 					le = resetRetryCounter(buff, cdataOff, lc);
 				} break;
+				case INS_DEACTIVATE:
+				case INS_ACTIVATE:
+				case INS_TERMINATE:
+					le = lcsManagement(buff, cdataOff, lc);
+				break;
 				default: {
 					ISOException.throwIt(SW_INS_NOT_SUPPORTED);
 				}
@@ -197,19 +204,35 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 
+	private short setAesKey(AESKey key, byte[] buff, short cdataOff, short lc)
+	{
+		short le = ZERO;
+		rand.generateData(buff, ZERO, SIXTEEN);
+		// Use the first bytes of the shared secret as AES key.
+		key.setKey(buff, ZERO);
+
+		// Initialize aes ciphers.
+		aesENC.init(key, Cipher.MODE_ENCRYPT);
+		aesDEC.init(key, Cipher.MODE_DECRYPT);
+		return le;
+	}
+
+
 	/**
 	 * CHANGE REFERENCE DATA (INS = 0x25), ISO 7816-4, clause 11.5.7.
 	 * <p>
 	 * CDATA shall contain BER-TLV data object (ISO 7816-4, clause 6.3) to make it possible to
 	 * distinguish one type of data from another (i.e. current PIN and new PIN).
 	 * <p>
-	 * This method handles the following data at specific Life cycle states:
+	 * This method supports the following operations:
 	 * <ul>
-	 * 	<li>APP_STATE_CREATION			<p>[81 Len <Initial PUK bytes>]
-	 * 	<li>APP_STATE_INITIALIZATION	<p>[81 Len <Initial PIN bytes>]
-	 * 	<li>APP_STATE_ACTIVATED			<p>[81 Len <CURR PIN bytes> 82 Len <NEW PIN bytes>]
+	 * 	<li> SET PUK:    <b>[81 Len [PUK]]</b>
+	 * 	<li> SET PIN:    <b>[81 Len [PIN]]</b>
+	 * 	<li> UPD PIN:    <b>[81 Len [CURR PIN] 82 Len [NEW PIN]]</b>
+	 *  <li> SET LABEL:  <b>[81 Len [LABEL]]</b>
+	 *  <li> CREATE AES: <b>[81 Len [KEY MATERIAL]]></b>
+	 *  <li> UPD AES:    <b>[81 Len [KEY MATERIAL]]></b>
 	 * </ul>
-	 * @param apdu
 	 */
 	private short changeReferenceData(byte[] buff, short cdataOff, short lc)
 	{
@@ -232,10 +255,6 @@ public class CryptoKey extends Applet implements ISO7816
 
 			case APP_STATE_CREATION: {	// Set PUK
 
-				if (p2 != (byte)0x01 && p2 != (byte)0x02) {
-					ISOException.throwIt(SW_INCORRECT_P1P2);
-				}
-
 				puk.update(buff, off, (byte)len);
 				puk.resetAndUnblock();
 				
@@ -249,10 +268,7 @@ public class CryptoKey extends Applet implements ISO7816
 			} break;
 			case APP_STATE_INITIALIZATION: {	// Set PIN
 
-				if (p1 != (byte)0x01 || p2 != (byte)0x01) {
-					ISOException.throwIt(SW_INCORRECT_P1P2);
-				}
-
+			
 				pin.update(buff, off, (byte)len);
 				pin.resetAndUnblock();
 
@@ -261,22 +277,10 @@ public class CryptoKey extends Applet implements ISO7816
 				ecFPpubKey  = (ECPublicKey)ecFPPair.getPublic();
 				ecDhPlain.init(ecFPprivKey);
 
-				rand.generateData(tempRamBuff, ZERO, SIXTEEN);
-				// Use the first bytes of the shared secret as AES key.
-				aesKey16.setKey(tempRamBuff, ZERO);
-
-				// Initialize aes ciphers.
-				aesEncCbcm1.init(aesKey16, Cipher.MODE_ENCRYPT);
-				aesDecCbcm1.init(aesKey16, Cipher.MODE_DECRYPT);
-
 				LCS = APP_STATE_ACTIVATED;
 				
 			} break;
 			case APP_STATE_ACTIVATED: {	// Update PIN
-
-				if (p1 != ZERO || p2 != ZERO) {
-					ISOException.throwIt(SW_INCORRECT_P1P2);
-				}
 
 				// Check the old PIN
 				if (!pin.check(buff, off, (byte)len)) {
@@ -468,6 +472,31 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 	
 
+	private short lcsManagement(byte[] buff, short cdataOff, short lc)
+	{
+		short le = ZERO;
+		byte ins = buff[OFFSET_INS];
+		byte p1 = buff[OFFSET_P1];
+		byte p2 = buff[OFFSET_P2];
+
+		if (p1 != (byte)0x30 && p2 != (byte)ZERO) {
+			ISOException.throwIt(SW_INCORRECT_P1P2);
+		}
+
+		switch (ins) {
+			case INS_DEACTIVATE:
+				LCS = APP_STATE_DEACTIVATED;
+			break;
+			case INS_ACTIVATE:
+				LCS = APP_STATE_ACTIVATED;
+			break;
+			case INS_TERMINATE:
+				LCS = APP_STATE_TERMINATED;
+			break;
+		}
+		return le;
+	}
+
 	/**
 	 * GENERATE SHARED SECRET (INS = 0x22), ISO 7816-4, clause 11.5.11.
 	 * @param buff
@@ -545,7 +574,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private short encipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		le = aesEncCbcm1.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le = aesENC.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
@@ -561,7 +590,7 @@ public class CryptoKey extends Applet implements ISO7816
 	private short decipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		le = aesDecCbcm1.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le = aesDEC.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
