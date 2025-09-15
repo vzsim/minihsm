@@ -82,7 +82,7 @@ end
 
 /echo ""
 /echo "*****CHANGE REF DATA: generate AES key object"
-/send 00250005#(81#(0000000000000000))
+/send 00250005#(81#(00000000000000000000000000000000))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end

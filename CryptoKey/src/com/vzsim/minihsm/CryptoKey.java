@@ -10,7 +10,6 @@ import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
 
 import javacard.security.CryptoException;
-import javacard.security.DESKey;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
@@ -103,8 +102,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private KeyAgreement ecDhPlain;
 	private byte[]       tempRamBuff;
 
-	private DESKey desKey8;
-	private Cipher desCipher;
+	private AESKey aesKey16;
+	private Cipher aesCipher;
 
 	private RandomData rand;
 
@@ -118,8 +117,8 @@ public class CryptoKey extends Applet implements ISO7816
 		TOKEN_LABEL[0] = (byte)0;
 		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
 		tempRamBuff    = JCSystem.makeTransientByteArray((short)(SIXTY_FOUR * (short)4), JCSystem.CLEAR_ON_RESET);
-		desKey8       = (DESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_DES, KeyBuilder.LENGTH_DES, false);
-		desCipher      = Cipher.getInstance(Cipher.ALG_DES_CBC_ISO9797_M1, false);
+		aesKey16       = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
+		aesCipher      = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
 
 		rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 
@@ -293,13 +292,13 @@ public class CryptoKey extends Applet implements ISO7816
 				// 	rand.generateData(buff, off, len);
 				// }
 
-				// if (p1 == ZERO && (len != SIXTEEN || off == (short)-1)) {
-				// 	ISOException.throwIt(SW_WRONG_DATA);
-				// }
-				desKey8.setKey(buff, off);
+				if (p1 == ZERO && (len != SIXTEEN || off == (short)-1)) {
+					ISOException.throwIt(SW_WRONG_DATA);
+				}
+				aesKey16.setKey(buff, off);
 
 				// Initialize aes ciphers.
-				desCipher.init(desKey8, Cipher.MODE_ENCRYPT);
+				aesCipher.init(aesKey16, Cipher.MODE_ENCRYPT);
 			} break;
 			case (byte)0x07: // Create ECDSA
 			{
@@ -592,9 +591,9 @@ public class CryptoKey extends Applet implements ISO7816
 	private short encipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		desCipher.init(desKey8, Cipher.MODE_ENCRYPT);
-		le = desCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
-		le = desCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
+		aesCipher.init(aesKey16, Cipher.MODE_ENCRYPT);
+		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le = aesCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
 
 		return le;
 	}
@@ -610,9 +609,9 @@ public class CryptoKey extends Applet implements ISO7816
 	private short decipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		desCipher.init(desKey8, Cipher.MODE_DECRYPT);
-		le = desCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
-		le = desCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
+		aesCipher.init(aesKey16, Cipher.MODE_DECRYPT);
+		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le = aesCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
 
 		return le;
 	}

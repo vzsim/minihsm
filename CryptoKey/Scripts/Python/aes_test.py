@@ -33,10 +33,10 @@ def ln(array):
 class AESClass:
 	def __init__(self):
 		self.cipher = None
-		self.iv = bytearray(8)
+		self.iv = bytearray(16)
 
 	def init_cipher(self, sk):
-		self.cipher = Cipher(algorithms.TripleDES(sk), modes.ECB())
+		self.cipher = Cipher(algorithms.AES(sk), modes.CBC(bytearray(16)))
 	
 	def encrypt_msg(self, plain_text: bytes):
 		encryptor = self.cipher.encryptor()
@@ -63,12 +63,12 @@ def main_func():
 	
 	dh.init_cipher(dh.iv)
 	
-	for i in range(3):
+	for i in range(1):
 		print("\t\t*** INTER No", i + 1)
-		card_cipher = trn(pcsc.asciiToHex('002A8480') + ln('0000000000000000'), expsw = 0x9000, descr = 'PSO: AES encrypt')
+		card_cipher = trn(pcsc.asciiToHex('002A8480') + ln('00000000000000000000000000000000'), expsw = 0x9000, descr = 'PSO: AES encrypt')
 		response = trn(pcsc.asciiToHex('002A8084') + ln(hexToAscii(card_cipher[:-2])), expsw = 0x9000, descr = 'PSO: AES decrypt')
 
-		print("host's cipher: ", hexToAscii(dh.encrypt_msg(bytearray(8))))
+		print("host's cipher: ", hexToAscii(dh.encrypt_msg(bytearray(16))))
 		print("card's cipher: ", hexToAscii(card_cipher[:-2]))
 		print("card's plain : ", hexToAscii(response[:-2]))
 
