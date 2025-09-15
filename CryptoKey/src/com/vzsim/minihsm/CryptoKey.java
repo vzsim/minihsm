@@ -298,7 +298,7 @@ public class CryptoKey extends Applet implements ISO7816
 				aesKey16.setKey(buff, off);
 
 				// Initialize aes ciphers.
-				aesCipher.init(aesKey16, Cipher.MODE_ENCRYPT);
+				// aesCipher.init(aesKey16, Cipher.MODE_ENCRYPT);
 			} break;
 			case (byte)0x07: // Create ECDSA
 			{
@@ -329,6 +329,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
 		short cmd  = (short)(((short)p1 << (short)8) | ((short)p2 & (short)0x00FF));
+		byte mode = 0;
 
 		// The ISO 7816-8, clause 5.3.1 states: "for this command, when verification related operation
 		// is considered, SW1-SW2 set to '6300' or '63CX' indicates that a verification failed."
@@ -344,18 +345,48 @@ public class CryptoKey extends Applet implements ISO7816
 
 		switch (cmd) {
 			case (short)0x8084: { // ISO 7816-8, clause 5.3.9
-				le = decipher(buff, cdataOff, lc);
+				mode = Cipher.MODE_DECRYPT;
 			} break;
 			case (short)0x8480: { // ISO 7816-8, clause 5.3.8
-				le = encipher(buff, cdataOff, lc);
+				mode = Cipher.MODE_ENCRYPT;
 			} break;
 			default: {
 				ISOException.throwIt(SW_FUNC_NOT_SUPPORTED);
 			}
 		}
+
+		le = aes(buff, cdataOff, lc, mode);
 		return le;
 	}
 
+
+	/**
+	 * Performs decryption of the input data using an algorithm specified in ... (TODO)
+	 * @param buff a cryptogram.
+	 * @param cdataOff offset within buff
+	 * @param lc the length on the cryptogram
+	 * @return the length of plaintext
+	 */
+	private short aes(byte[] buff, short cdataOff, short lc, byte mode)
+	{
+		short le = ZERO;
+		aesCipher.init(aesKey16, mode);
+		// le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		// if (le == ZERO) {
+		// 	ISOException.throwIt((short)(SW_WRONG_LENGTH + (short)1));
+		// }
+
+		// le = aesCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
+		// if (le == ZERO) {
+		// 	ISOException.throwIt((short)(SW_WRONG_LENGTH + (short)2));
+		// }
+		le = aesCipher.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
+		if (le == ZERO) {
+			ISOException.throwIt((short)(SW_WRONG_LENGTH + (short)2));
+		}
+		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
+		return le;
+	}
 
 	/**
 	 * VERIFY (INS = 0x20), ISO 7816-4, clause 11.5.6.
@@ -575,45 +606,6 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 
 		return offset;
-	}
-
-	
-	/**
-	 * Performs encryption of the input data using an algorithm specified in ... (TODO)
-	 * 
-	 * @apiNote data must be encoded in BER-TLV format.
-	 * 
-	 * @param buff a plaintext.
-	 * @param cdataOff offset within buffer
-	 * @param lc the length on plaintext
-	 * @return the length of cryptogram
-	 */
-	private short encipher(byte[] buff, short cdataOff, short lc)
-	{
-		short le = ZERO;
-		aesCipher.init(aesKey16, Cipher.MODE_ENCRYPT);
-		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
-		le = aesCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
-
-		return le;
-	}
-
-
-	/**
-	 * Performs decryption of the input data using an algorithm specified in ... (TODO)
-	 * @param buff a cryptogram.
-	 * @param cdataOff offset within buff
-	 * @param lc the length on the cryptogram
-	 * @return the length of plaintext
-	 */
-	private short decipher(byte[] buff, short cdataOff, short lc)
-	{
-		short le = ZERO;
-		aesCipher.init(aesKey16, Cipher.MODE_DECRYPT);
-		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
-		le = aesCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
-
-		return le;
 	}
 
 

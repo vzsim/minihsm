@@ -62,15 +62,16 @@ def main_func():
 	trn(pcsc.asciiToHex('00200000') + ln('3131313131'),   expsw = 0x9000, descr = 'Verify PIN')
 	
 	dh.init_cipher(dh.iv)
-	
+	host_cipher = dh.encrypt_msg(bytearray(32))
+
 	for i in range(1):
 		print("\t\t*** INTER No", i + 1)
-		card_cipher = trn(pcsc.asciiToHex('002A8480') + ln('00000000000000000000000000000000'), expsw = 0x9000, descr = 'PSO: AES encrypt')
-		response = trn(pcsc.asciiToHex('002A8084') + ln(hexToAscii(card_cipher[:-2])), expsw = 0x9000, descr = 'PSO: AES decrypt')
+		card_cipher = trn(pcsc.asciiToHex('002A8480') + ln(hexToAscii(bytearray(32))), expsw = 0x9000, descr = 'PSO: AES encrypt')
+		card_plain = trn(pcsc.asciiToHex('002A8084') + ln(hexToAscii(host_cipher)), expsw = 0x9000, descr = 'PSO: AES decrypt')
 
-		print("host's cipher: ", hexToAscii(dh.encrypt_msg(bytearray(16))))
+		print("host's cipher: ", hexToAscii(host_cipher))
 		print("card's cipher: ", hexToAscii(card_cipher[:-2]))
-		print("card's plain : ", hexToAscii(response[:-2]))
+		print("card's plain : ", hexToAscii(card_plain[:-2]))
 
 	pcsc.disconnect(card)
 
