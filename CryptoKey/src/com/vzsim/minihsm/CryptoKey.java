@@ -10,6 +10,7 @@ import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
 
 import javacard.security.CryptoException;
+import javacard.security.DESKey;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
@@ -102,9 +103,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private KeyAgreement ecDhPlain;
 	private byte[]       tempRamBuff;
 
-	private AESKey aesKey16;
-	private Cipher aesENC;
-	private Cipher aesDEC;
+	private DESKey desKey8;
+	private Cipher desCipher;
 
 	private RandomData rand;
 
@@ -118,9 +118,9 @@ public class CryptoKey extends Applet implements ISO7816
 		TOKEN_LABEL[0] = (byte)0;
 		ecDhPlain      = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
 		tempRamBuff    = JCSystem.makeTransientByteArray((short)(SIXTY_FOUR * (short)4), JCSystem.CLEAR_ON_RESET);
-		aesKey16       = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-		aesENC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
-		aesDEC         = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
+		desKey8       = (DESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_DES, KeyBuilder.LENGTH_DES, false);
+		desCipher      = Cipher.getInstance(Cipher.ALG_DES_CBC_ISO9797_M1, false);
+
 		rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 
 		appletState    = JCSystem.makeTransientByteArray((short)2, JCSystem.CLEAR_ON_RESET);
@@ -144,9 +144,9 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 
 		short le = 0, lc = 0;
-		byte[] buff    = apdu.getBuffer();
-		byte ins       = buff[OFFSET_INS];
-		byte p1        = buff[OFFSET_P1];
+		byte[] buff = apdu.getBuffer();
+		byte ins    = buff[OFFSET_INS];
+		byte p1     = buff[OFFSET_P1];
 
 		short cdataOff = apdu.getOffsetCdata();
 
@@ -212,13 +212,13 @@ public class CryptoKey extends Applet implements ISO7816
 	 * <p>
 	 * This method supports the following operations:
 	 * <ul>
-	 * 	<li> SET PUK:      <b>[P2=01] [81 Len [PUK] ]</b>
-	 * 	<li> SET PIN:      <b>[P2=02] [81 Len [PIN] ]</b>
-	 * 	<li> UPD PIN:      <b>[P2=03] [81 Len [CURR PIN] 82 Len [NEW PIN] ]</b>
-	 *  <li> SET LABEL:    <b>[P2=04] [81 Len [LABEL] ]</b>
-	 *  <li> CREATE AES:   <b>[P2=05] [81 Len [KEY MATERIAL] ]</b>
-	 *  <li> UPD AES:      <b>[P2=06] [81 Len [KEY MATERIAL] ]</b>
-	 *  <li> GEN ECDSA:    <b>[P2=07]</b>
+	 * 	<li> SET PUK:           <b> [P1=00, P2=01] [81 Len [PUK] ] </b>
+	 * 	<li> SET PIN:           <b> [P1=00, P2=02] [81 Len [PIN] ] </b>
+	 * 	<li> UPD PIN:           <b> [P1=00, P2=03] [81 Len [CURR PIN] 82 Len [NEW PIN] ] </b>
+	 *  <li> SET LABEL:         <b> [P1=00, P2=04] [81 Len [LABEL] ] </b>
+	 *  <li> CREATE/UPDATE AES: <b> [P1=00, P2=05] [81 Len [KEY MATERIAL] ] </b>
+	 *  <li> CREATE/UPDATE AES: <b> [P1=01, P2=05] </b>
+	 *  <li> GEN ECDSA:         <b> [P1=01, P2=07] </b>
 	 * </ul>
 	 */
 	private short changeReferenceData(byte[] buff, short cdataOff, short lc)
@@ -227,17 +227,15 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p2 = buff[OFFSET_P2];
 		short len = 0, off = 0;
 
-		if (lc == ZERO) {
-			ISOException.throwIt(SW_WRONG_LENGTH);
+		
+		// Fetch the CDATA.
+		if (p1 == ZERO) {
+			if (lc == ZERO) {
+				ISOException.throwIt(SW_WRONG_LENGTH);
+			}
+			len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x81);
+			off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x81);
 		}
-
-		if (p1 != ZERO) {
-			ISOException.throwIt(SW_INCORRECT_P1P2);
-		}
-
-		// Fetch the CDATA (if any).
-		len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x81);
-		off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x81);
 
 		if (p2 <= (byte)0x03 && (len < PIN_MIN_LENGTH || len > PIN_MAX_LENGTH || off == (short)-1)) {
 			ISOException.throwIt(SW_WRONG_DATA);
@@ -284,17 +282,24 @@ public class CryptoKey extends Applet implements ISO7816
 				// (off - 1) means 'grab the length too'.
 				Util.arrayCopyNonAtomic(buff, (short)(off - (short)1), TOKEN_LABEL, (short)0, (short)(len + (short)1));
 			} break;
-			case (byte)0x05: // Create AES
-			case (byte)0x06: // Update AES
+			case (byte)0x05: // Create/update AES
 			{
-				if (len != SIXTEEN || off == (short)-1) {
-					ISOException.throwIt(SW_WRONG_DATA);
-				}
-				aesKey16.setKey(buff, off);
+				// p1=0x00 means that a key material is passed over in CDATA and its length must be 16 bytes.
+				// if (p1 == ZERO && (len != SIXTEEN || off == (short)-1)) {
+				// 	ISOException.throwIt(SW_WRONG_DATA);
+				// } else {
+				// 	// Otherwise, generate a random 16 bytes that will be used as key material.
+				// 	off = ZERO;
+				// 	rand.generateData(buff, off, len);
+				// }
+
+				// if (p1 == ZERO && (len != SIXTEEN || off == (short)-1)) {
+				// 	ISOException.throwIt(SW_WRONG_DATA);
+				// }
+				desKey8.setKey(buff, off);
 
 				// Initialize aes ciphers.
-				aesENC.init(aesKey16, Cipher.MODE_ENCRYPT);
-				aesDEC.init(aesKey16, Cipher.MODE_DECRYPT);
+				desCipher.init(desKey8, Cipher.MODE_ENCRYPT);
 			} break;
 			case (byte)0x07: // Create ECDSA
 			{
@@ -587,8 +592,10 @@ public class CryptoKey extends Applet implements ISO7816
 	private short encipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		le = aesENC.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
-		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
+		desCipher.init(desKey8, Cipher.MODE_ENCRYPT);
+		le = desCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le = desCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
+
 		return le;
 	}
 
@@ -603,8 +610,10 @@ public class CryptoKey extends Applet implements ISO7816
 	private short decipher(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		le = aesDEC.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
-		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
+		desCipher.init(desKey8, Cipher.MODE_DECRYPT);
+		le = desCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le = desCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
+
 		return le;
 	}
 
@@ -619,7 +628,6 @@ public class CryptoKey extends Applet implements ISO7816
 			case (short)0x2000: // verify
 			case (short)0x2200: // Establish SM: generate shared
 			case (short)0x2500:	// change ref data
-			case (short)0x2501:	// change ref data
 			case (short)0x2D00: // reset retry counter: activate card and set new PIN
 			case (short)0x2D01: // reset retry counter: activate card and reset PIN
 				result = true;

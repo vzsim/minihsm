@@ -33,10 +33,10 @@ def ln(array):
 class AESClass:
 	def __init__(self):
 		self.cipher = None
-		self.iv = bytearray(16)
+		self.iv = bytearray(8)
 
 	def init_cipher(self, sk):
-		self.cipher = Cipher(algorithms.AES(sk), modes.CBC(self.iv))
+		self.cipher = Cipher(algorithms.TripleDES(sk), modes.ECB())
 	
 	def encrypt_msg(self, plain_text: bytes):
 		encryptor = self.cipher.encryptor()
@@ -62,13 +62,15 @@ def main_func():
 	trn(pcsc.asciiToHex('00200000') + ln('3131313131'),   expsw = 0x9000, descr = 'Verify PIN')
 	
 	dh.init_cipher(dh.iv)
-	print("host's cipher: ", hexToAscii(dh.encrypt_msg(bytearray(16))))
 	
-	response = trn(pcsc.asciiToHex('002A8480') + ln('00000000000000000000000000000000'), expsw = 0x9000, descr = 'PSO: AES encrypt')
-	print("card's cipher: ", hexToAscii(response[:-2]))
+	for i in range(3):
+		print("\t\t*** INTER No", i + 1)
+		card_cipher = trn(pcsc.asciiToHex('002A8480') + ln('0000000000000000'), expsw = 0x9000, descr = 'PSO: AES encrypt')
+		response = trn(pcsc.asciiToHex('002A8084') + ln(hexToAscii(card_cipher[:-2])), expsw = 0x9000, descr = 'PSO: AES decrypt')
 
-	# response = trn(pcsc.asciiToHex('002A8084') + ln(hexToAscii(response[:-2])), expsw = 0x9000, descr = 'PSO: AES decrypt')
-	# print("plain text: ", hexToAscii(response[:-2]))
+		print("host's cipher: ", hexToAscii(dh.encrypt_msg(bytearray(8))))
+		print("card's cipher: ", hexToAscii(card_cipher[:-2]))
+		print("card's plain : ", hexToAscii(response[:-2]))
 
 	pcsc.disconnect(card)
 
