@@ -204,20 +204,6 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 
-	private short setAesKey(AESKey key, byte[] buff, short cdataOff, short lc)
-	{
-		short le = ZERO;
-		rand.generateData(buff, ZERO, SIXTEEN);
-		// Use the first bytes of the shared secret as AES key.
-		key.setKey(buff, ZERO);
-
-		// Initialize aes ciphers.
-		aesENC.init(key, Cipher.MODE_ENCRYPT);
-		aesDEC.init(key, Cipher.MODE_DECRYPT);
-		return le;
-	}
-
-
 	/**
 	 * CHANGE REFERENCE DATA (INS = 0x25), ISO 7816-4, clause 11.5.7.
 	 * <p>
@@ -226,12 +212,13 @@ public class CryptoKey extends Applet implements ISO7816
 	 * <p>
 	 * This method supports the following operations:
 	 * <ul>
-	 * 	<li> SET PUK:    <b>[81 Len [PUK]]</b>
-	 * 	<li> SET PIN:    <b>[81 Len [PIN]]</b>
-	 * 	<li> UPD PIN:    <b>[81 Len [CURR PIN] 82 Len [NEW PIN]]</b>
-	 *  <li> SET LABEL:  <b>[81 Len [LABEL]]</b>
-	 *  <li> CREATE AES: <b>[81 Len [KEY MATERIAL]]></b>
-	 *  <li> UPD AES:    <b>[81 Len [KEY MATERIAL]]></b>
+	 * 	<li> SET PUK:      <b>[P2=01] [81 Len [PUK] ]</b>
+	 * 	<li> SET PIN:      <b>[P2=02] [81 Len [PIN] ]</b>
+	 * 	<li> UPD PIN:      <b>[P2=03] [81 Len [CURR PIN] 82 Len [NEW PIN] ]</b>
+	 *  <li> SET LABEL:    <b>[P2=04] [81 Len [LABEL] ]</b>
+	 *  <li> CREATE AES:   <b>[P2=05] [81 Len [KEY MATERIAL] ]</b>
+	 *  <li> UPD AES:      <b>[P2=06] [81 Len [KEY MATERIAL] ]</b>
+	 *  <li> GEN ECDSA:    <b>[P2=07]</b>
 	 * </ul>
 	 */
 	private short changeReferenceData(byte[] buff, short cdataOff, short lc)
@@ -243,45 +230,38 @@ public class CryptoKey extends Applet implements ISO7816
 		if (lc == ZERO) {
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
-		// Common case for each LCS: either PIN or PUK.
+
+		if (p1 != ZERO) {
+			ISOException.throwIt(SW_INCORRECT_P1P2);
+		}
+
+		// Fetch the CDATA (if any).
 		len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x81);
 		off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x81);
 
-		if (len < PIN_MIN_LENGTH || len > PIN_MAX_LENGTH || off == (short)-1) {
+		if (p2 <= (byte)0x03 && (len < PIN_MIN_LENGTH || len > PIN_MAX_LENGTH || off == (short)-1)) {
 			ISOException.throwIt(SW_WRONG_DATA);
 		}
-		
-		switch (LCS) {
 
-			case APP_STATE_CREATION: {	// Set PUK
+		if (p2 == (byte)0x04 && len > THIRTY_TWO) {
+			ISOException.throwIt(SW_WRONG_LENGTH);
+		}
 
+		switch (p2) {
+
+			case (byte)0x01: // Set PUK
+			{
 				puk.update(buff, off, (byte)len);
 				puk.resetAndUnblock();
-				
-				len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x82);
-				off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x82);
-				
-				// (off - 1) means 'grab the length too'.
-				Util.arrayCopyNonAtomic(buff, (short)(off - (short)1), TOKEN_LABEL, (short)0, (short)(len + (short)1));
-				LCS = APP_STATE_INITIALIZATION;
-
 			} break;
-			case APP_STATE_INITIALIZATION: {	// Set PIN
-
-			
+			case (byte)0x02: // Set PIN
+			{
 				pin.update(buff, off, (byte)len);
 				pin.resetAndUnblock();
-
-				ecFPPair.genKeyPair();
-				ecFPprivKey = (ECPrivateKey)ecFPPair.getPrivate();
-				ecFPpubKey  = (ECPublicKey)ecFPPair.getPublic();
-				ecDhPlain.init(ecFPprivKey);
-
-				LCS = APP_STATE_ACTIVATED;
 				
 			} break;
-			case APP_STATE_ACTIVATED: {	// Update PIN
-
+			case (byte)0x03: // Update PIN
+			{
 				// Check the old PIN
 				if (!pin.check(buff, off, (byte)len)) {
 					ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
@@ -298,6 +278,30 @@ public class CryptoKey extends Applet implements ISO7816
 				pin.update(buff, off, (byte)len);
 				pin.resetAndUnblock();
 
+			} break;
+			case (byte)0x04: // Set LABEL
+			{
+				// (off - 1) means 'grab the length too'.
+				Util.arrayCopyNonAtomic(buff, (short)(off - (short)1), TOKEN_LABEL, (short)0, (short)(len + (short)1));
+			} break;
+			case (byte)0x05: // Create AES
+			case (byte)0x06: // Update AES
+			{
+				if (len != SIXTEEN || off == (short)-1) {
+					ISOException.throwIt(SW_WRONG_DATA);
+				}
+				aesKey16.setKey(buff, off);
+
+				// Initialize aes ciphers.
+				aesENC.init(aesKey16, Cipher.MODE_ENCRYPT);
+				aesDEC.init(aesKey16, Cipher.MODE_DECRYPT);
+			} break;
+			case (byte)0x07: // Create ECDSA
+			{
+				ecFPPair.genKeyPair();
+				ecFPprivKey = (ECPrivateKey)ecFPPair.getPrivate();
+				ecFPpubKey  = (ECPublicKey)ecFPPair.getPublic();
+				ecDhPlain.init(ecFPprivKey);
 			} break;
 			default: ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
@@ -471,7 +475,16 @@ public class CryptoKey extends Applet implements ISO7816
 		return ZERO;
 	}
 	
-
+	/**
+	 * ACTIVATE (INS = 0x44), ISO 7816-9, clause 6.5<p>
+	 * ACTIVATE (INS = 0x04), ISO 7816-9, clause 6.4<p>
+	 * ACTIVATE (INS = 0xE6), ISO 7816-9, clause 6.6<p>
+	 * 
+	 * @param buff
+	 * @param cdataOff
+	 * @param lc
+	 * @return
+	 */
 	private short lcsManagement(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
