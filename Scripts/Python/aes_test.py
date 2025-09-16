@@ -62,8 +62,10 @@ def main_func():
 	trn(pcsc.asciiToHex('00200000') + ln('3131313131'),   expsw = 0x9000, descr = 'Verify PIN')
 	
 	dh.init_cipher(dh.iv)
-	plain_text = bytearray(16)
-	host_cipher = dh.encrypt_msg(bytearray(16))
+
+	text_len = 224
+	plain_text = bytearray(text_len)
+	host_cipher = dh.encrypt_msg(bytearray(text_len))
 
 	for i in range(1):
 		print("\n\t*** INTER No ***", i + 1)
