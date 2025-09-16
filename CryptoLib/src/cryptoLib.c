@@ -1,4 +1,5 @@
 #include "cryptoLib.h"
+#include "iso7816.h"
 
 static CK_BBOOL pkcs11_initialized = CK_FALSE;
 static CK_BBOOL pkcs11_session_opened = CK_FALSE;
@@ -9,63 +10,6 @@ static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
 
 static CK_ULONG ulPinLenMin = 0;
 static CK_ULONG ulPinLenMax = 0;
-
-static Apdu_t apdu;
-
-static void
-fetch_sw(Apdu_t* apdu)
-{
-	apdu->sw = ((((uint16_t)apdu->resp[apdu->respLen - 2] << 8) & 0xFF00)
-					|((uint16_t)apdu->resp[apdu->respLen - 1]       & 0x00FF));
-}
-
-static int32_t
-transmit(Apdu_t* apdu)
-{
-	int32_t rv = 1;
-
-	do {
-		if (apdu->cmdLen > CAPDU_LENGTH) {
-			break;
-		}
-
-		apdu->respLen = RAPDU_LENGTH;
-		DBG_PRINT_APDU(apdu->cmd, apdu->cmdLen, 1)
-	
-		rv = sc_apdu_transmit(apdu->cmd, apdu->cmdLen, apdu->resp, &apdu->respLen);
-		fetch_sw(apdu);
-
-		DBG_PRINT_APDU(apdu->resp, apdu->respLen, 0)
-	} while (0);
-
-	return rv;
-}
-
-static uint32_t
-get_response(Apdu_t* apdu)
-{
-	int32_t rv = 0;
-	apdu->cmdLen = 5;
-	uint8_t get_resp[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
-
-	do {
-		if (0x6100 != (apdu->sw & 0xFF00)) {
-			break;
-		}
-		
-		get_resp[4] = apdu->sw & 0x00FF;
-		memcpy(apdu->cmd, get_resp, apdu->cmdLen);
-
-		rv = 1;
-		if (transmit(apdu)) {
-			break;
-		}
-
-		rv = 0;
-	} while (0);
-
-	return rv;
-}
 
 CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 {
