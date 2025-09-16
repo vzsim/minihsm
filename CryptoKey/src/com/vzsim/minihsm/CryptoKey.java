@@ -372,7 +372,7 @@ public class CryptoKey extends Applet implements ISO7816
 		short le = ZERO;
 		aesCipher.init(aesKey16, mode);
 		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
-		le += aesCipher.doFinal(buff, (short)(cdataOff + le), (short)(lc - le), tempRamBuff, le);
+		le += aesCipher.doFinal(buff, le, (short)(lc - le), tempRamBuff, le);
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}

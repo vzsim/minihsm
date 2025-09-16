@@ -104,3 +104,19 @@ private short aes(byte[] buff, short cdataOff, short lc, byte mode)
 	return le;
 }
 ```
+
+
+> Weird behaviour. Part 3.\
+This code outputs symmetric erroneous values, i.e. now both the input and output are\
+assigned additional bytes.
+```java
+private short aes(byte[] buff, short cdataOff, short lc, byte mode)
+{
+	short le = ZERO;
+	aesCipher.init(aesKey16, mode);
+	le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+	le += aesCipher.doFinal(buff, le, lc, tempRamBuff, le);
+	Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
+	return le;
+}
+```
