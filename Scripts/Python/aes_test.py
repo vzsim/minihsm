@@ -63,7 +63,7 @@ def main_func():
 	
 	dh.init_cipher(dh.iv)
 
-	text_len = 224
+	text_len = 32
 	plain_text = bytearray(text_len)
 	host_cipher = dh.encrypt_msg(bytearray(text_len))
 
