@@ -371,19 +371,8 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		short le = ZERO;
 		aesCipher.init(aesKey16, mode);
-		// le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
-		// if (le == ZERO) {
-		// 	ISOException.throwIt((short)(SW_WRONG_LENGTH + (short)1));
-		// }
-
-		// le = aesCipher.doFinal(tempRamBuff, ZERO, le, buff, ZERO);
-		// if (le == ZERO) {
-		// 	ISOException.throwIt((short)(SW_WRONG_LENGTH + (short)2));
-		// }
-		le = aesCipher.doFinal(buff, cdataOff, lc, tempRamBuff, ZERO);
-		if (le == ZERO) {
-			ISOException.throwIt((short)(SW_WRONG_LENGTH + (short)2));
-		}
+		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le += aesCipher.doFinal(buff, (short)(cdataOff + le), (short)(lc - le), tempRamBuff, le);
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}

@@ -22,7 +22,7 @@ auth
 
 /echo ""
 /echo "    ---=== Upload new IsoApplet ===---"
-upload -c ${wrkDir}/../../CryptoKey.cap
+upload -c ${wrkDir}/../../CryptoKey/CryptoKey.cap
 #upload -c ${wrkDir}/../../build/CryptoKey.cap
 
 /echo ""

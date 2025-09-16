@@ -67,3 +67,14 @@ pkcs11-tool --module ./build/libCryptoKey.so -T
 pkcs11-tool --module ./build/libCryptoKey.so --init-token --label "MyHSM" --so-pin "01234"
 pkcs11-tool --module ./build/libCryptoKey.so --init-pin --login --so-pin 01234 --new-pin 43210
 ```
+
+> NOTE
+```bash
+Although the Dockerfile contains the instruction to install python3-pip, it ins't installed at all.
+Thus, to run python scripts in 'Scripts/Python' folder, proceed to the following steps:
+
+1. run Docker
+2. # apt install python3-pip
+3. # apt install python3-cryptography
+4. # apt install python3-pyscard
+```
