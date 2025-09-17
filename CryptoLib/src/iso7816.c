@@ -1,11 +1,11 @@
 #include "iso7816.h"
 #include <string.h>
-#include <stdarg.h>
 
 static Apdu_t apdu;
 
-// (uint8_t[]){0xA0, 0x00, 0x00, 0x00, 0x01, 0x01} applet's AID
-uint8_t* cmdList[] = {
+uint8_t AID[] = {0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
+
+static uint8_t* cmdList[] = {
 	[cmd_select_app]        = (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06},
 	[cmd_get_data]          = (uint8_t[]){0x00, 0xCA, 0x00, 0xFF, 0x00},
 
@@ -32,33 +32,83 @@ uint8_t* cmdList[] = {
 	[cmd_get_response]      = (uint8_t[]){0x00, 0xC0, 0x00, 0x00, 0x00},
 };
 
-void
+static uint8_t
 fetch_sw(void)
 {
 	memcpy(&apdu.sw, &apdu.resp[apdu.respLen - 2], 2);
+
+	if ((apdu.sw & 0xFF00) == 0x6100) {
+		memcpy(apdu.cmd, cmdList[cmd_get_response], 5);
+		apdu.cmd[OFFSET_LC] = apdu.resp[apdu.respLen - 1];
+
+		apdu.cmdLen = 5;
+		return 1;
+	}
+
+	return 0;
+}
+
+static int32_t
+send_command(void* buff, uint16_t len)
+{
+	int32_t rv = 1;
+	apdu.respLen = RAPDU_LENGTH;
+
+	DBG_PRINT_APDU(apdu.cmd, apdu.cmdLen, 1)
+	rv = sc_apdu_transmit(apdu.cmd, apdu.cmdLen, apdu.resp, &apdu.respLen);
+	DBG_PRINT_APDU(apdu.resp, apdu.respLen, 0)
+
+	return rv;
 }
 
 int32_t
-transmit(cmdEnum cmdID, uint8_t argsCount, ...)
+transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t outLen)
 {
-	va_list args;
-	va_start(args, argsCount);
 	int32_t rv = 1;
+
+	memcpy(apdu.cmd, cmdList[cmdID], apdu.cmdLen);
+
+	switch (cmdID) {
+		case cmd_select_app:
+			apdu.cmd[OFFSET_LC] = sizeof(AID);
+			memcpy(&apdu.cmd[OFFSET_CDATA], AID, sizeof(AID));
+			apdu.cmdLen = 5 + sizeof(AID);
+		break;
+		case cmd_get_data:        
+
+		case cmd_crd_set_puk:     
+		case cmd_crd_set_pin:     
+		case cmd_crd_upd_pin:     
+		case cmd_crd_set_label:   
+		case cmd_crd_create_aes_km: 
+		case cmd_crd_create_aes:  
+		case cmd_crd_gen_ecdsa:   
+
+		case cmd_verify:          
+		case cmd_verify_reset:    
+
+		case cmd_pso_enc:         
+		case cmd_pso_dec:         
+
+		case cmd_lcs_activated:   
+		case cmd_get_response:
+		break;
+		default: return rv;
+	}
 
 	do {
 		if (apdu.cmdLen > CAPDU_LENGTH) {
 			break;
 		}
 
-		apdu.respLen = RAPDU_LENGTH;
-		DBG_PRINT_APDU(apdu.cmd, apdu.cmdLen, 1)
-	
-		rv = sc_apdu_transmit(apdu.cmd, apdu.cmdLen, apdu.resp, &apdu.respLen);
-		fetch_sw();
-	} while (0);
-	DBG_PRINT_APDU(apdu.resp, apdu.respLen, 0)
+		send_command(inBuff, inLen);
+		if (fetch_sw()) {
+			continue;
+		}
 
-	va_end(args);
+		memcpy((uint8_t*)outBuff, apdu.resp, apdu.respLen);
+		rv = 0;
+	} while (0);
 
 	return rv;
 }

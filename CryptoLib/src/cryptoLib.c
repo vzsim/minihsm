@@ -173,6 +173,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 {
 	CK_RV rv;
+	uint8_t* temp = NULL;
 
 	DBG_PRINT_FUNC_NAME("C_GetTokenInfo")
 
@@ -191,25 +192,22 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 
 		rv = CKR_FUNCTION_FAILED;
 
-		apdu.cmdLen = 11;
-		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
-		if (transmit(&apdu))
+		if (transmit(cmd_select_app, NULL, 0, NULL, 0)){
 			break;
+		}
 
-		if (get_response(&apdu))
+		temp = malloc(sizeof(CK_TOKEN_INFO));
+		if (temp == NULL) {
 			break;
-		
-		apdu.cmdLen = 5;
-		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xCA, 0x00, 0xFF, 0x00}, apdu.cmdLen);
-		if (transmit(&apdu))
+		}
+
+		if (transmit(cmd_get_data, NULL, 0, temp, sizeof(CK_TOKEN_INFO))){
 			break;
-		
-		if (get_response(&apdu))
-			break;
+		}
 		
 		int32_t offset = 0;
 		int32_t len = 0;
-		uint8_t flags = apdu.resp[offset++];
+		uint8_t flags = temp[offset++];
 
 		switch (flags) {
 			case 0x01: // LCS CREATION
@@ -230,33 +228,33 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		pInfo->hardwareVersion.major = 0x01;
 		pInfo->hardwareVersion.minor = 0x00;
 
-		pInfo->firmwareVersion.major = apdu.resp[offset++];
-		pInfo->firmwareVersion.minor = apdu.resp[offset++];
+		pInfo->firmwareVersion.major = temp[offset++];
+		pInfo->firmwareVersion.minor = temp[offset++];
 
-		ulPinLenMin = apdu.resp[offset++];
-		ulPinLenMax = apdu.resp[offset++];
+		ulPinLenMin = temp[offset++];
+		ulPinLenMax = temp[offset++];
 
 		pInfo->ulMinPinLen = ulPinLenMin;
 		pInfo->ulMaxPinLen = ulPinLenMax;
 		
-		len = apdu.resp[offset++];
+		len = temp[offset++];
 		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
-		memcpy(pInfo->manufacturerID, &apdu.resp[offset], len);
+		memcpy(pInfo->manufacturerID, &temp[offset], len);
 
 		offset += len;
-		len = apdu.resp[offset++];
+		len = temp[offset++];
 		memset(pInfo->label, ' ', sizeof(pInfo->label));
-		memcpy(pInfo->label, &apdu.resp[offset], len);
+		memcpy(pInfo->label, &temp[offset], len);
 
 		offset += len;
-		len = apdu.resp[offset++];
+		len = temp[offset++];
 		memset(pInfo->model, ' ', sizeof(pInfo->model));
-		memcpy(pInfo->model, &apdu.resp[offset], len);
+		memcpy(pInfo->model, &temp[offset], len);
 
 		offset += len;
-		len = apdu.resp[offset++];
+		len = temp[offset++];
 		memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
-		memcpy(pInfo->serialNumber, &apdu.resp[offset], len);
+		memcpy(pInfo->serialNumber, &temp[offset], len);
 
 		pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
 		pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
@@ -274,6 +272,10 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		rv = CKR_OK;
 	} while(0);
 
+	if (temp) {
+		free(temp);
+	}
+	
 	return rv;
 }
 
@@ -429,33 +431,37 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 
 		rv = CKR_FUNCTION_FAILED;
 		
-		apdu.cmdLen = 11;
-		memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
-		if (transmit(&apdu))
+		if (transmit(cmd_select_app, NULL, 0)){
 			break;
+		}
 
-		if (get_response(&apdu))
-			break;
+		// apdu.cmdLen = 11;
+		// memcpy(apdu.cmd, (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x06, 0xA0, 0x00, 0x00, 0x00, 0x01, 0x01}, apdu.cmdLen);
+		// if (transmit(&apdu))
+		// 	break;
+
+		// if (get_response(&apdu))
+		// 	break;
 		
-		apdu.cmdLen = 5;
-		memcpy(apdu.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x02, 0x00}, apdu.cmdLen);
+		// apdu.cmdLen = 5;
+		// memcpy(apdu.cmd, (uint8_t[]){0x00, 0x25, 0x01, 0x02, 0x00}, apdu.cmdLen);
 
-		uint32_t labelLen = strlen((const char *)pLabel);
-		apdu.cmd[4] = labelLen + ulPinLen + 4;	// '+ 4' - for tag and length fields of TLVs
-		apdu.cmdLen += apdu.cmd[4];
+		// uint32_t labelLen = strlen((const char *)pLabel);
+		// apdu.cmd[4] = labelLen + ulPinLen + 4;	// '+ 4' - for tag and length fields of TLVs
+		// apdu.cmdLen += apdu.cmd[4];
 
-		apdu.cmd[5] = 0x81;
-		apdu.cmd[6] = ulPinLen;
-		memcpy(&apdu.cmd[7], pPin, ulPinLen);
+		// apdu.cmd[5] = 0x81;
+		// apdu.cmd[6] = ulPinLen;
+		// memcpy(&apdu.cmd[7], pPin, ulPinLen);
 
-		apdu.cmd[7 + ulPinLen] = 0x82;
-		apdu.cmd[8 + ulPinLen] = labelLen;
-		memcpy(&apdu.cmd[9 + ulPinLen], pLabel, labelLen);
-		if (transmit(&apdu))
-			break;
+		// apdu.cmd[7 + ulPinLen] = 0x82;
+		// apdu.cmd[8 + ulPinLen] = labelLen;
+		// memcpy(&apdu.cmd[9 + ulPinLen], pLabel, labelLen);
+		// if (transmit(&apdu))
+		// 	break;
 
-		if (get_response(&apdu))
-			break;
+		// if (get_response(&apdu))
+		// 	break;
 		
 		rv = CKR_OK;
 	} while (0);

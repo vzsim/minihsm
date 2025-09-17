@@ -49,7 +49,9 @@ typedef enum {
 
 extern uint8_t* cmdList[];
 
-uint8_t dataBuff[32 * 1024];
+// uint8_t dataBuff[32 * 1024];
+
+transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t outLen);
 
 #if defined(CRYPTOKI_DEBUG)
 
