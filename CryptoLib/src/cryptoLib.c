@@ -32,7 +32,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 			break;
 		}
 			
-		if (sc_card_connect(&apdu.protocol)){
+		if (sc_card_connect()){
 			break;
 		}
 			

@@ -19,23 +19,35 @@ typedef struct {
 	uint8_t  resp[RAPDU_LENGTH];
 	uint64_t respLen;
 	uint16_t sw;
-	uint16_t  protocol;
 } Apdu_t;
-
-typedef struct {
-	uint8_t* cmd;
-	uint32_t len;
-} cmd_t;
 
 typedef enum {
 	cmd_select_app,
 	cmd_get_data,
-	cmd_change_ref_data,
+	cmd_crd_set_puk,
+	cmd_crd_set_pin,
+	cmd_crd_upd_pin,
+	cmd_crd_set_label,
+	cmd_crd_create_aes_km, // create aes key object using user's key material
+	cmd_crd_create_aes,    // create aes key object using PRNG
+	cmd_crd_gen_ecdsa,     // generate ECDSA key pair
+	
 	cmd_verify,
+	cmd_verify_reset,
+
+
+	cmd_pso_enc,
+	cmd_pso_dec,
+
+	cmd_lcs_activated,
+	cmd_lcs_dectivated,
+	cmd_lcs_terminated,
+
 	cmd_get_response,
+	cmd_total
 } cmdEnum;
 
-extern cmd_t cmdList[];
+extern uint8_t* cmdList[];
 
 uint8_t dataBuff[32 * 1024];
 
@@ -92,6 +104,6 @@ print_cmd_name(uint8_t* cmd, uint32_t cmdLen)
 #	define DBG_PRINT_APDU(buff, len, isCmd)
 #endif
 
-extern Apdu_t apdu;
+// extern Apdu_t apdu;
 
 #endif /* ISO7816_H */
