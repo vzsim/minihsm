@@ -22,6 +22,7 @@ import javacard.security.AESKey;
 public class CryptoKey extends Applet implements ISO7816
 {
 	private static final short ZERO       = (short)0;
+	private static final short ONE        = (short)1;
 	private static final short SIXTEEN    = (short)16;
 	private static final short THIRTY_TWO = (short)32;
 	private static final short SIXTY_FOUR = (short)64;
@@ -379,6 +380,11 @@ public class CryptoKey extends Applet implements ISO7816
 
 	/**
 	 * VERIFY (INS = 0x20), ISO 7816-4, clause 11.5.6.
+	 * This method supports the following operations:
+	 * <ul>
+	 * 	<li> VERIFY PUK:           <b> [P1=00, P2=00] [PUK] </b>
+	 * 	<li> VERIFY PIN:           <b> [P1=00, P2=01] [PIN] </b>
+	 * </ul>
 	 * @param buff
 	 * @param cdataOff
 	 * @param lc
@@ -387,6 +393,8 @@ public class CryptoKey extends Applet implements ISO7816
 	private short verify(byte[] buff, short cdataOff, short lc)
 	{
 		byte p1 = buff[OFFSET_P1];
+		byte p2 = buff[OFFSET_P2];
+		OwnerPIN ptrPin = null;
 
 		byte appState = LCS;
 
@@ -394,7 +402,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if (p1 != ZERO && p1 != ~ZERO) {
+		if ((p1 != ZERO && p1 != ~ZERO) || (p2 != ZERO && p2 != ONE)) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
@@ -415,15 +423,21 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
 
+		if (p2 == ZERO) {
+			ptrPin = puk;
+		} else {
+			ptrPin = pin;
+		}
+
 		// Check the PIN.
-		if (!pin.check(buff, cdataOff, (byte)lc)) {
+		if (!ptrPin.check(buff, cdataOff, (byte)lc)) {
 			
 			appletState[OFFSET_APP_STATE_PIN] = ZERO;
-			if (pin.getTriesRemaining() < (byte)1) {
+			if (ptrPin.getTriesRemaining() < (byte)1) {
 				LCS = APP_STATE_DEACTIVATED;
 			}
 
-			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
+			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | ptrPin.getTriesRemaining()));
 		}
 
 		appletState[OFFSET_APP_STATE_PIN] = ~ZERO;

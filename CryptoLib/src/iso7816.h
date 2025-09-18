@@ -3,9 +3,12 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #define CAPDU_LENGTH 261	// CLA INS P1 P1 Lc [255 bytes of CDATA] Le
 #define RAPDU_LENGTH 258	// [256 bytes of RDATA] SW1 SW2
+#define APDU_HEADER_LENGTH 5
+
 #define OFFSET_CLA   0
 #define OFFSET_INS   1
 #define OFFSET_P1    2
@@ -18,7 +21,8 @@ typedef struct {
 	uint32_t cmdLen;
 	uint8_t  resp[RAPDU_LENGTH];
 	uint64_t respLen;
-	uint16_t sw;
+	uint8_t sw1;
+	uint8_t sw2;
 } Apdu_t;
 
 typedef enum {
@@ -31,16 +35,16 @@ typedef enum {
 	cmd_crd_create_aes_km, // create aes key object using user's key material
 	cmd_crd_create_aes,    // create aes key object using PRNG
 	cmd_crd_gen_ecdsa,     // generate ECDSA key pair
-	
-	cmd_verify,
-	cmd_verify_reset,
 
+	cmd_verify_puk,
+	cmd_verify_pin,
+	cmd_verify_reset,
 
 	cmd_pso_enc,
 	cmd_pso_dec,
 
 	cmd_lcs_activated,
-	cmd_lcs_dectivated,
+	cmd_lcs_deactivated,
 	cmd_lcs_terminated,
 
 	cmd_get_response,
@@ -49,38 +53,18 @@ typedef enum {
 
 extern uint8_t* cmdList[];
 
-// uint8_t dataBuff[32 * 1024];
-
-transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t outLen);
+int32_t transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* outLen);
 
 #if defined(CRYPTOKI_DEBUG)
 
+void print_cmd_name(uint8_t* cmd, uint32_t cmdLen);
+
 typedef struct {
-	uint8_t cls_ins_p1[4];
+	uint8_t cls_ins_p1[5];
 	const char* str;
 } cmd_struct;
 
-static cmd_struct known_commands[] = {
-	{{0x00, 0xc0, 0x00, 0x00}, "GET RESPONSE"},
-	{{0x00, 0xa4, 0x04, 0x00}, "SELECT"},
-	{{0x00, 0xca, 0x00, 0xff}, "GET DATA"},
-	{{0x00, 0x25, 0x01, 0x01}, "INIT PIN"},
-	{{0x00, 0x25, 0x01, 0x02}, "INIT TOKEN"},
-	{{0x00, 0x25, 0x00, 0x00}, "UPDATE TOKEN"},
-};
-
-static void
-print_cmd_name(uint8_t* cmd, uint32_t cmdLen)
-{	
-	for (uint32_t i = 0; i < sizeof(known_commands) / sizeof(cmd_struct); ++i) {
-		if (!memcmp(known_commands[i].cls_ins_p1, cmd, 4)) {
-			printf("%s\n", known_commands[i].str);
-			return;
-		}
-	}
-
-	printf("UNKNOWN COMMAND\n");
-}
+extern cmd_struct known_commands[];
 
 #	define DBG_PRINT_FUNC_NAME(name)		\
 	printf("%s\n", name);

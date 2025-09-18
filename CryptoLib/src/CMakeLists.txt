@@ -1,6 +1,7 @@
 add_library(${ENTRY_POINT} MODULE
 	${CMAKE_CURRENT_SOURCE_DIR}/cryptoLib.c
 	${CMAKE_CURRENT_SOURCE_DIR}/scard/scard_library.c
+	${CMAKE_CURRENT_SOURCE_DIR}/iso7816.c
 )
 
 target_include_directories(${ENTRY_POINT}
@@ -11,7 +12,7 @@ target_include_directories(${ENTRY_POINT}
 )
 
 add_compile_definitions(
-	CRYPTOKI_DEBUG
+	# CRYPTOKI_DEBUG
 )
 
 if(CMAKE_HOST_APPLE)

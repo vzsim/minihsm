@@ -54,7 +54,7 @@ cd CryptoKey && ant && cp ./CryptoKey.cap ../build && cd ..
 Load CryptoKey.cap:
 
 ```bash
-/data/jcshell.sh -f /workspace/CryptoKey/Scripts/load.jcsh 
+/data/jcshell.sh -f /workspace/Scripts/JCShell/01_install_test.jcsh 
 ```
 
 ### Run PKCS#11 tool
@@ -62,6 +62,7 @@ Load CryptoKey.cap:
 Run inside docker:
 
 ```bash
+cd CryptoLib
 pkcs11-tool --module ./build/libCryptoKey.so -I
 pkcs11-tool --module ./build/libCryptoKey.so -T
 pkcs11-tool --module ./build/libCryptoKey.so --init-token --label "MyHSM" --so-pin "01234"
