@@ -36,7 +36,7 @@ uint8_t* cmdList[] = {
 };
 
 static uint8_t
-fetch_sw(void)
+has_response(void)
 {
 	apdu.sw1 = apdu.resp[apdu.respLen - 2];
 	apdu.sw2 = apdu.resp[apdu.respLen - 1];
@@ -70,6 +70,7 @@ transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* o
 {
 	int32_t rv = 1;
 
+	DBG_PRINT_CMD_NAME(cmdList[cmdID])
 	// First of all, using a cmdID param copy requested APDU into apdu.cmd buffer
 	memcpy(apdu.cmd, cmdList[cmdID], APDU_HEADER_LENGTH);
 
@@ -130,42 +131,44 @@ transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* o
 			// nothing to send to the token in CDATA for this command.
 			apdu.cmdLen = APDU_HEADER_LENGTH;
 		} break;
-		case cmd_get_response: {} break;
+		// case cmd_get_response: {} break;
 
-		default: return rv;
+		default: {
+			goto _exit;
+		}
 	}
 
-	do {
-		if (apdu.cmdLen > CAPDU_LENGTH) {
-			break;
-		}
+	if (apdu.cmdLen > CAPDU_LENGTH) {
+		goto _exit;
+	}
 
-		send_command();
-		if (fetch_sw()) {
-			hasResponse = 1;
-			continue;
+_again:
+	send_command();
+	if (has_response()) {
+		hasResponse = 1;
+		goto _again;
+	}
+	
+	if (hasResponse) {
+		hasResponse = 0;
+		if ((outBuff == NULL) || (outLen == NULL)) {
+			goto _exit;
 		}
-		
-		if (hasResponse) {
-			hasResponse = 0;
-			if ((outBuff == NULL) || (outLen == NULL)) {
-				rv = 1;
-				break;
-			}
-			memcpy((uint8_t*)outBuff, apdu.resp, apdu.respLen);
-			*outLen = apdu.respLen;
-		}
+		memcpy((uint8_t*)outBuff, apdu.resp, apdu.respLen);
+		*outLen = apdu.respLen;
+	}
+
+	if (apdu.sw1 == 0x90) {
 		rv = 0;
-		break;
-	} while (1);
+	}
 
+_exit:
 	return rv;
 }
 
 #if defined(CRYPTOKI_DEBUG)
 
 cmd_struct known_commands[] = {
-
 	{{0x00, 0xA4, 0x04, 0x00, 0x00},"SELECT"},
 	{{0x00, 0xCA, 0x00, 0xFF, 0x00},"GET DATA"},
 	{{0x00, 0x25, 0x00, 0x01, 0x00},"SET PUK"},
@@ -175,7 +178,7 @@ cmd_struct known_commands[] = {
 	{{0x00, 0x25, 0x00, 0x05, 0x00},"CREATE AES KEY USING GIVEN KEY MATERIAL"},
 	{{0x00, 0x25, 0x01, 0x05, 0x00},"CREATE AES KEY"},
 	{{0x00, 0x25, 0x01, 0x07, 0x00},"GENERATE ECDSA"},
-		// Security status related operations
+
 	{{0x00, 0x20, 0x00, 0x00, 0x00},"VERIFY PIN"},
 	{{0x00, 0x20, 0xFF, 0x00, 0x00},"RESET PIN"},
 	{{0x00, 0x2A, 0x84, 0x80, 0x00},"ENCRYPT"},
@@ -185,11 +188,11 @@ cmd_struct known_commands[] = {
 };
 
 void
-print_cmd_name(uint8_t* cmd, uint32_t cmdLen)
+print_cmd_name(uint8_t* cmd)
 {	
 	for (uint32_t i = 0; i < sizeof(known_commands) / sizeof(cmd_struct); ++i) {
 		if (!memcmp(known_commands[i].cls_ins_p1, cmd, (long unsigned int)4)) {
-			printf("%s\n", known_commands[i].str);
+			printf("\t***%s***\n", known_commands[i].str);
 			return;
 		}
 	}

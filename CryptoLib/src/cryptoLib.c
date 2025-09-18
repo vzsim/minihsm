@@ -454,7 +454,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 	return rv;
 }
 
-// pkcs11-tool --module ./build/src/libCryptoKey.so --init-pin --login --so-pin 01234 --new-pin 43210
+
 CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen)
 {
 	CK_RV rv;
@@ -724,8 +724,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_Login)(CK_SESSION_HANDLE hSession, CK_USER_TYPE user
 			break;
 		}
 		
+		cmdEnum cmdType = userType == CKU_SO ? cmd_verify_puk : cmd_verify_pin;
 		rv = CKR_PIN_INCORRECT;
-		if (transmit(cmd_verify_puk, pPin, ulPinLen, NULL, 0)) {
+		if (transmit(cmdType, pPin, ulPinLen, NULL, 0)) {
 			break;
 		}
 		rv = CKR_OK;

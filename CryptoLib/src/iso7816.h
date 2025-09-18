@@ -57,7 +57,7 @@ int32_t transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uin
 
 #if defined(CRYPTOKI_DEBUG)
 
-void print_cmd_name(uint8_t* cmd, uint32_t cmdLen);
+void print_cmd_name(uint8_t* cmd);
 
 typedef struct {
 	uint8_t cls_ins_p1[5];
@@ -66,13 +66,15 @@ typedef struct {
 
 extern cmd_struct known_commands[];
 
+#	define DBG_PRINT_CMD_NAME(buff)         \
+	print_cmd_name(buff);
+
 #	define DBG_PRINT_FUNC_NAME(name)		\
 	printf("%s\n", name);
 
 #	define DBG_PRINT_APDU(buff, len, isCmd)	\
 	do {									\
 		if (isCmd) {						\
-			print_cmd_name(buff, len);		\
 			printf(">> ");					\
 		} else {							\
 			printf("<< ");					\

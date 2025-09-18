@@ -65,8 +65,8 @@ Run inside docker:
 cd CryptoLib
 pkcs11-tool --module ./build/libCryptoKey.so -I
 pkcs11-tool --module ./build/libCryptoKey.so -T
-pkcs11-tool --module ./build/libCryptoKey.so --init-token --label "MyHSM" --so-pin "01234"
-pkcs11-tool --module ./build/libCryptoKey.so --init-pin --login --so-pin 01234 --new-pin 43210
+pkcs11-tool --module ./build/libCryptoKey.so --init-token --label "SMDP" --so-pin "012345"
+pkcs11-tool --module ./build/libCryptoKey.so --init-pin --login --so-pin 012345 --new-pin 11111
 ```
 
 > NOTE
