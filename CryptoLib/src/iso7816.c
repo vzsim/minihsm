@@ -58,9 +58,9 @@ send_command(void)
 	int32_t rv = 1;
 	apdu.respLen = RAPDU_LENGTH;
 
-	DBG_PRINT_APDU(apdu.cmd, apdu.cmdLen, 1)
+	// DBG_PRINT_APDU(apdu.cmd, apdu.cmdLen, 1)
 	rv = sc_apdu_transmit(apdu.cmd, apdu.cmdLen, apdu.resp, &apdu.respLen);
-	DBG_PRINT_APDU(apdu.resp, apdu.respLen, 0)
+	// DBG_PRINT_APDU(apdu.resp, apdu.respLen, 0)
 
 	return rv;
 }
