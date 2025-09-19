@@ -212,11 +212,11 @@ public class CryptoKey extends Applet implements ISO7816
 	 * <p>
 	 * This method supports the following operations:
 	 * <ul>
-	 * 	<li> SET PUK:           <b> [P1=00, P2=01] [81 Len [PUK] ] </b>
-	 * 	<li> SET PIN:           <b> [P1=00, P2=02] [81 Len [PIN] ] </b>
-	 * 	<li> UPD PIN:           <b> [P1=00, P2=03] [81 Len [CURR PIN] 82 Len [NEW PIN] ] </b>
-	 *  <li> SET LABEL:         <b> [P1=00, P2=04] [81 Len [LABEL] ] </b>
-	 *  <li> CREATE/UPDATE AES: <b> [P1=00, P2=05] [81 Len [KEY MATERIAL] ] </b>
+	 * 	<li> SET PUK:           <b> [P1=00, P2=01] [ 81 Len [PUK] ]          </b>
+	 * 	<li> SET PIN:           <b> [P1=00, P2=02] [ 81 Len [PIN] ]          </b>
+	 * 	<li> UPD PIN:           <b> [P1=00, P2=03] [ 81 Len [NEW PIN] ]      </b>
+	 *  <li> SET LABEL:         <b> [P1=00, P2=04] [ 81 Len [LABEL] ]        </b>
+	 *  <li> CREATE/UPDATE AES: <b> [P1=00, P2=05] [ 81 Len [KEY MATERIAL] ] </b>
 	 *  <li> CREATE/UPDATE AES: <b> [P1=01, P2=05] </b>
 	 *  <li> GEN ECDSA:         <b> [P1=01, P2=07] </b>
 	 * </ul>
@@ -226,7 +226,7 @@ public class CryptoKey extends Applet implements ISO7816
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
 		short len = 0, off = 0;
-
+		OwnerPIN pPin = null;
 		
 		// Fetch the CDATA.
 		if (p1 == ZERO) {
@@ -237,45 +237,40 @@ public class CryptoKey extends Applet implements ISO7816
 			off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x81);
 		}
 
-		if (p2 <= (byte)0x03 && (len < PIN_MIN_LENGTH || len > PIN_MAX_LENGTH || off == (short)-1)) {
-			ISOException.throwIt(SW_WRONG_DATA);
-		}
-
 		if (p2 == (byte)0x04 && len > THIRTY_TWO) {
 			ISOException.throwIt(SW_WRONG_LENGTH);
+		}
+
+		switch (LCS) {
+			case APP_STATE_INITIALIZATION:
+				// At this LCS all operations are permitted.
+			break;
+			case APP_STATE_ACTIVATED:
+				// skip the switch statement if a user have logged in.
+				if (appletState[OFFSET_APP_STATE_PIN] == ~ZERO) {
+					break;
+				}
+				// Otherwise, fall through to the exception statement.
+			case APP_STATE_TERMINATED:
+				// fall through
+			case APP_STATE_DEACTIVATED:
+				ISOException.throwIt(SW_CONDITIONS_NOT_SATISFIED);
+			break;
 		}
 
 		switch (p2) {
 
 			case (byte)0x01: // Set PUK
-			{
-				puk.update(buff, off, (byte)len);
-				puk.resetAndUnblock();
-			} break;
 			case (byte)0x02: // Set PIN
-			{
-				pin.update(buff, off, (byte)len);
-				pin.resetAndUnblock();
-				
-			} break;
 			case (byte)0x03: // Update PIN
 			{
-				// Check the old PIN
-				if (!pin.check(buff, off, (byte)len)) {
-					ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
-				}
-
-				len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x82);
-				off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x82);
-
-				if (len < PIN_MIN_LENGTH || len > PIN_MAX_LENGTH || off == (short)-1) {
+				if ((len < PIN_MIN_LENGTH || len > PIN_MAX_LENGTH || off == (short)-1)) {
 					ISOException.throwIt(SW_WRONG_DATA);
 				}
 
-				// Update PIN
-				pin.update(buff, off, (byte)len);
-				pin.resetAndUnblock();
-
+				pPin = (p2 == ONE) ? puk : pin;
+				pPin.update(buff, off, (byte)len);
+				pPin.resetAndUnblock();
 			} break;
 			case (byte)0x04: // Set LABEL
 			{
@@ -284,22 +279,15 @@ public class CryptoKey extends Applet implements ISO7816
 			} break;
 			case (byte)0x05: // Create/update AES
 			{
-				// p1=0x00 means that a key material is passed over in CDATA and its length must be 16 bytes.
-				// if (p1 == ZERO && (len != SIXTEEN || off == (short)-1)) {
-				// 	ISOException.throwIt(SW_WRONG_DATA);
-				// } else {
-				// 	// Otherwise, generate a random 16 bytes that will be used as key material.
-				// 	off = ZERO;
-				// 	rand.generateData(buff, off, len);
-				// }
-
-				if (p1 == ZERO && (len != SIXTEEN || off == (short)-1)) {
+				if (p1 == ONE) {
+					off = ZERO;
+					len = SIXTEEN;
+					rand.generateData(buff, off, len);
+				} else if (p1 == ZERO && (len != SIXTEEN || off == (short)-1)) {
 					ISOException.throwIt(SW_WRONG_DATA);
 				}
-				aesKey16.setKey(buff, off);
 
-				// Initialize aes ciphers.
-				// aesCipher.init(aesKey16, Cipher.MODE_ENCRYPT);
+				aesKey16.setKey(buff, off);
 			} break;
 			case (byte)0x07: // Create ECDSA
 			{
@@ -382,8 +370,8 @@ public class CryptoKey extends Applet implements ISO7816
 	 * VERIFY (INS = 0x20), ISO 7816-4, clause 11.5.6.
 	 * This method supports the following operations:
 	 * <ul>
-	 * 	<li> VERIFY PUK:           <b> [P1=00, P2=00] [PUK] </b>
-	 * 	<li> VERIFY PIN:           <b> [P1=00, P2=01] [PIN] </b>
+	 * 	<li> VERIFY PUK: <b> [P1=00, P2=00] [PUK] </b>
+	 * 	<li> VERIFY PIN: <b> [P1=00, P2=01] [PIN] </b>
 	 * </ul>
 	 * @param buff
 	 * @param cdataOff

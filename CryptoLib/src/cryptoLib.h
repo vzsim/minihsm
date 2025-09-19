@@ -2,7 +2,6 @@
 #define CRYPTOLIB_H
 
 #include "pkcs11-cryptolib.h"
-#include "scard_library.h"
 
 static CK_FUNCTION_LIST pkcs11_240_funcs =
 {

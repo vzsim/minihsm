@@ -1,5 +1,6 @@
 #include "cryptoLib.h"
 #include "iso7816.h"
+#include <stdlib.h>
 
 static uint8_t AID[] = {0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
 static uint16_t aidLen = sizeof(AID);
@@ -27,15 +28,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 			break;
 			
 		rv = CKR_FUNCTION_FAILED;
-		if (sc_create_ctx()){
-			break;
-		}
-		
-		if (sc_get_available_readers()){
-			break;
-		}
-			
-		if (sc_card_connect()){
+		if (initialize_token()) {
 			break;
 		}
 			
@@ -51,6 +44,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 {
 	CK_RV rv;
 	DBG_PRINT_FUNC_NAME("C_Finalize")
+	IGNORE(pReserved);
 
 	do {
 
@@ -58,13 +52,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 		if (CK_FALSE == pkcs11_initialized)
 			break;
 
-		IGNORE(pReserved);
-
 		rv = CKR_FUNCTION_FAILED;
-		if (sc_card_disconnect())
+		if (finalize_token())
 			break;
-		
-		sc_delete_ctx();
 		
 		pkcs11_initialized = CK_FALSE;
 		rv = CKR_OK;
@@ -172,7 +162,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 	return CKR_OK;
 }
 
-// pkcs11-tool --module ./build/src/libCryptoKey.so -T
+
 CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 {
 	CK_RV rv;
@@ -400,7 +390,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 }
 
 
-// pkcs11-tool --module ./build/src/libCryptoKey.so --init-token --label "SMDP" --so-pin "01234"
 CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, CK_ULONG ulPinLen, CK_UTF8CHAR_PTR pLabel)
 {
 	CK_RV rv;
@@ -1099,6 +1088,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_FindObjects)(CK_SESSION_HANDLE hSession, CK_OBJECT_H
 
 CK_DEFINE_FUNCTION(CK_RV, C_FindObjectsFinal)(CK_SESSION_HANDLE hSession)
 {
+	DBG_PRINT_FUNC_NAME("C_FindObjectsFinal")
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -1116,6 +1106,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_FindObjectsFinal)(CK_SESSION_HANDLE hSession)
 
 CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJECT_HANDLE hKey)
 {
+	DBG_PRINT_FUNC_NAME("C_EncryptInit")
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -1198,50 +1189,61 @@ CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 
 CK_DEFINE_FUNCTION(CK_RV, C_Encrypt)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData, CK_ULONG ulDataLen, CK_BYTE_PTR pEncryptedData, CK_ULONG_PTR pulEncryptedDataLen)
 {
-	CK_ULONG i = 0;
+	CK_RV rv = CKR_ARGUMENTS_BAD;
 
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	DBG_PRINT_FUNC_NAME("C_Encrypt")
 
-	if (PKCS11_CRYPTOLIB_CK_OPERATION_ENCRYPT != pkcs11_active_operation)
-		return CKR_OPERATION_NOT_INITIALIZED;
+	do {
+		if (NULL == pData)
+			break;
 
-	if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
-		return CKR_SESSION_HANDLE_INVALID;
+		if (0 >= ulDataLen)
+			break;
 
-	if (NULL == pData)
-		return CKR_ARGUMENTS_BAD;
+		if (NULL == pEncryptedData)
+			break;
+		
+		if (NULL == pulEncryptedDataLen)
+			break;
+		
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
 
-	if (0 >= ulDataLen)
-		return CKR_ARGUMENTS_BAD;
+		rv = CKR_OPERATION_NOT_INITIALIZED;
+		if (PKCS11_CRYPTOLIB_CK_OPERATION_ENCRYPT != pkcs11_active_operation)
+			break;
 
-	if (NULL == pulEncryptedDataLen)
-		return CKR_ARGUMENTS_BAD;
+		rv = CKR_SESSION_HANDLE_INVALID;
+		if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
+			break;
 
-	if (NULL != pEncryptedData)
-	{
+		rv = CKR_BUFFER_TOO_SMALL;
 		if (ulDataLen > *pulEncryptedDataLen)
-		{
-			return CKR_BUFFER_TOO_SMALL;
+			break;
+
+		rv = CKR_FUNCTION_FAILED;
+		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+			break;
 		}
-		else
-		{
-			for (i = 0; i < ulDataLen; i++)
-				pEncryptedData[i] = pData[i] ^ 0xAB;
 
-			pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
+		if (transmit(cmd_pso_enc, pData, ulDataLen, pEncryptedData, (uint16_t *)pulEncryptedDataLen)) {
+			break;
 		}
-	}
 
-	*pulEncryptedDataLen = ulDataLen;
+		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
+		rv = CKR_OK;
+	} while (0);
 
-	return CKR_OK;
+	return rv;
 }
 
 
 CK_DEFINE_FUNCTION(CK_RV, C_EncryptUpdate)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart, CK_ULONG ulPartLen, CK_BYTE_PTR pEncryptedPart, CK_ULONG_PTR pulEncryptedPartLen)
 {
 	CK_ULONG i = 0;
+
+	DBG_PRINT_FUNC_NAME("C_EncryptUpdate")
 
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -1282,6 +1284,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_EncryptUpdate)(CK_SESSION_HANDLE hSession, CK_BYTE_P
 
 CK_DEFINE_FUNCTION(CK_RV, C_EncryptFinal)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pLastEncryptedPart, CK_ULONG_PTR pulLastEncryptedPartLen)
 {
+	DBG_PRINT_FUNC_NAME("C_EncryptFinal")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -1322,6 +1326,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_EncryptFinal)(CK_SESSION_HANDLE hSession, CK_BYTE_PT
 
 CK_DEFINE_FUNCTION(CK_RV, C_DecryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJECT_HANDLE hKey)
 {
+	DBG_PRINT_FUNC_NAME("C_DecryptInit")
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -1404,50 +1409,63 @@ CK_DEFINE_FUNCTION(CK_RV, C_DecryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 
 CK_DEFINE_FUNCTION(CK_RV, C_Decrypt)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncryptedData, CK_ULONG ulEncryptedDataLen, CK_BYTE_PTR pData, CK_ULONG_PTR pulDataLen)
 {
-	CK_ULONG i = 0;
+	CK_RV rv = CKR_ARGUMENTS_BAD;
 
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	DBG_PRINT_FUNC_NAME("C_Decrypt")
 
-	if (PKCS11_CRYPTOLIB_CK_OPERATION_DECRYPT != pkcs11_active_operation)
-		return CKR_OPERATION_NOT_INITIALIZED;
+	do {
+		if (NULL == pEncryptedData)
+			break;
 
-	if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
-		return CKR_SESSION_HANDLE_INVALID;
+		if (0 >= ulEncryptedDataLen)
+			break;
 
-	if (NULL == pEncryptedData)
-		return CKR_ARGUMENTS_BAD;
+		if (NULL == pData)
+			break;
+		
+		if (NULL == pulDataLen)
+			break;
+		
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
 
-	if (0 >= ulEncryptedDataLen)
-		return CKR_ARGUMENTS_BAD;
+		rv = CKR_OPERATION_NOT_INITIALIZED;
+		if (PKCS11_CRYPTOLIB_CK_OPERATION_DECRYPT != pkcs11_active_operation)
+			break;
 
-	if (NULL == pulDataLen)
-		return CKR_ARGUMENTS_BAD;
-
-	if (NULL != pData)
-	{
+		rv = CKR_SESSION_HANDLE_INVALID;
+		if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
+			break;
+		
+		rv = CKR_BUFFER_TOO_SMALL;
 		if (ulEncryptedDataLen > *pulDataLen)
-		{
-			return CKR_BUFFER_TOO_SMALL;
+			break;
+		
+		rv = CKR_FUNCTION_FAILED;
+		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+			break;
 		}
-		else
-		{
-			for (i = 0; i < ulEncryptedDataLen; i++)
-				pData[i] = pEncryptedData[i] ^ 0xAB;
 
-			pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
+		if (transmit(cmd_pso_enc, pEncryptedData, ulEncryptedDataLen, pData, (uint16_t *)pulDataLen)) {
+			break;
 		}
-	}
+
+		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
+		rv = CKR_OK;
+	} while (0);
 
 	*pulDataLen = ulEncryptedDataLen;
 
-	return CKR_OK;
+	return rv;
 }
 
 
 CK_DEFINE_FUNCTION(CK_RV, C_DecryptUpdate)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncryptedPart, CK_ULONG ulEncryptedPartLen, CK_BYTE_PTR pPart, CK_ULONG_PTR pulPartLen)
 {
 	CK_ULONG i = 0;
+
+	DBG_PRINT_FUNC_NAME("C_DecryptUpdate")
 
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -1488,6 +1506,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_DecryptUpdate)(CK_SESSION_HANDLE hSession, CK_BYTE_P
 
 CK_DEFINE_FUNCTION(CK_RV, C_DecryptFinal)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pLastPart, CK_ULONG_PTR pulLastPartLen)
 {
+	DBG_PRINT_FUNC_NAME("C_DecryptFinal")
+
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -2286,44 +2306,65 @@ CK_DEFINE_FUNCTION(CK_RV, C_DecryptVerifyUpdate)(CK_SESSION_HANDLE hSession, CK_
 CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount, CK_OBJECT_HANDLE_PTR phKey)
 {
 	CK_ULONG i = 0;
+	CK_RV rv = CKR_ARGUMENTS_BAD;
 
-	if (CK_FALSE == pkcs11_initialized)
-		return CKR_CRYPTOKI_NOT_INITIALIZED;
+	do {
+		if (NULL == pMechanism)
+			break;
+			
+		if (NULL == pTemplate)
+			break;
 
-	if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
-		return CKR_SESSION_HANDLE_INVALID;
+		if (0 >= ulCount)
+			break;
 
-	if (NULL == pMechanism)
-		return CKR_ARGUMENTS_BAD;
+		if (NULL == phKey)
+			break;
+		
+		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
+		if (CK_FALSE == pkcs11_initialized)
+			break;
 
-	if (CKM_DES3_KEY_GEN != pMechanism->mechanism)
-		return CKR_MECHANISM_INVALID;
+		rv = CKR_SESSION_HANDLE_INVALID;
+		if ((CK_FALSE == pkcs11_session_opened) || (PKCS11_CRYPTOLIB_CK_SESSION_ID != hSession))
+			break;
+		
+		rv = CKR_MECHANISM_INVALID;
+		if (CKM_DES3_KEY_GEN != pMechanism->mechanism)
+			break;
+		
+		rv = CKR_MECHANISM_PARAM_INVALID;
+		if ((NULL != pMechanism->pParameter) || (0 != pMechanism->ulParameterLen))
+			break;
+		
+		rv = CKR_ATTRIBUTE_VALUE_INVALID;
+		for (i = 0; i < ulCount; i++)
+		{
+			if (NULL == pTemplate[i].pValue)
+				break;
+	
+			if (0 >= pTemplate[i].ulValueLen)
+				break;
+		}
+		
+		rv = CKR_FUNCTION_FAILED;
+		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+			break;
+		}
 
-	if ((NULL != pMechanism->pParameter) || (0 != pMechanism->ulParameterLen))
-		return CKR_MECHANISM_PARAM_INVALID;
+		if (transmit(cmd_crd_create_aes, NULL, 0, NULL, 0)) {
+			break;
+		}
 
-	if (NULL == pTemplate)
-		return CKR_ARGUMENTS_BAD;
+		rv = CKR_OK;
+	} while (0);
 
-	if (0 >= ulCount)
-		return CKR_ARGUMENTS_BAD;
-
-	if (NULL == phKey)
-		return CKR_ARGUMENTS_BAD;
-
-	for (i = 0; i < ulCount; i++)
-	{
-		if (NULL == pTemplate[i].pValue)
-			return CKR_ATTRIBUTE_VALUE_INVALID;
-
-		if (0 >= pTemplate[i].ulValueLen)
-			return CKR_ATTRIBUTE_VALUE_INVALID;
-	}
 
 	*phKey = PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY;
 
-	return CKR_OK;
+	return rv;
 }
+
 
 /**
  * @brief generates a public/private key pair, creating new key objects.

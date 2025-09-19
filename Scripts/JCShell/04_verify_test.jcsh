@@ -13,14 +13,14 @@ end
 
 /echo ""
 /echo "VERIFY PIN: get PIN remaining tries"
-/send 0020000000
+/send 0020000100
 if ${last.response.status} != 63C3
 	/error "Expected SW 63C3 but got ${last.response.status}"
 end
 
 /echo ""
 /echo "VERIFY PIN: enter correct PIN"
-/send 00200000#(3131313131)
+/send 00200001#(3131313131)
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
@@ -32,7 +32,7 @@ while ${outer} < 2
 	/set-var SWORD 0x63C2
 	/set-var i 0
 	while ${i} < 2
-		/send 00200000#(3232323232)
+		/send 00200001#(3232323232)
 		/set-var SWORD $(/expr ${SWORD} - ${i})
 		if ${last.response.status} != ${SWORD;h4}
 			/error "Expected SW ${SWORD} but got ${last.response.status}"
@@ -42,7 +42,7 @@ while ${outer} < 2
 
 	/echo ""
 	/echo "VERIFY PIN"
-	/send 00200000#(3131313131)
+	/send 00200001#(3131313131)
 	if ${last.response.status} != 9000
 		/error "Expected SW 9000 but got ${last.response.status}"
 	end

@@ -46,7 +46,7 @@ if ${last.response.status} != 9000
 end
 
 /echo ""
-/echo "*****CHANGE REF DATA: set PUK"
+/echo "*****CHANGE REF DATA: set PUK (012345)"
 /send 00250001#(81#(303132333435))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
@@ -68,14 +68,14 @@ end
 
 /echo ""
 /echo "*****CHANGE REF DATA: update PIN (22222)"
-/send 00250003#(81#(3131313131)82#(3232323232))
+/send 00250003#(81#(3232323232))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end
 
 /echo ""
 /echo "*****CHANGE REF DATA: restore previous PIN (11111)"
-/send 00250003#(81#(3232323232)82#(3131313131))
+/send 00250002#(81#(3131313131))
 if ${last.response.status} != 9000
 	/error "Expected SW 9000 but got ${last.response.status}"
 end

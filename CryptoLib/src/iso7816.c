@@ -71,67 +71,40 @@ transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* o
 	int32_t rv = 1;
 
 	DBG_PRINT_CMD_NAME(cmdList[cmdID])
-	// First of all, using a cmdID param copy requested APDU into apdu.cmd buffer
+
+	// First of all, using a cmdID param copy requested command into apdu.cmd buffer
 	memcpy(apdu.cmd, cmdList[cmdID], APDU_HEADER_LENGTH);
+	apdu.cmd[OFFSET_LC] = inLen;
+	apdu.cmdLen = APDU_HEADER_LENGTH + inLen;
 
 	switch (cmdID) {
-		case cmd_select_app: {
-			apdu.cmd[OFFSET_LC] = inLen;
-			memcpy(&apdu.cmd[OFFSET_CDATA], inBuff, inLen);
-			apdu.cmdLen = APDU_HEADER_LENGTH + inLen;
-		} break;
-		case cmd_get_data: {
-			// nothing to send to the token in CDATA for this command.
-			apdu.cmdLen = APDU_HEADER_LENGTH;
-		} break;
-
-		case cmd_crd_set_puk: {
-			apdu.cmd[OFFSET_LC]        = inLen + 2; // '2' is for 0x81 and LEN fields of the TLV 
-			apdu.cmd[OFFSET_CDATA]     = 0x81;
-			apdu.cmd[OFFSET_CDATA + 1] = inLen;
-			memcpy(&apdu.cmd[OFFSET_CDATA + 2], inBuff, inLen);
-			apdu.cmdLen = APDU_HEADER_LENGTH + inLen + 2;
-		} break;
-		case cmd_crd_set_pin: {
-			apdu.cmd[OFFSET_LC]        = inLen + 2; // '2' is for 0x81 and LEN fields of the TLV 
-			apdu.cmd[OFFSET_CDATA]     = 0x81;
-			apdu.cmd[OFFSET_CDATA + 1] = inLen;
-			memcpy(&apdu.cmd[OFFSET_CDATA + 2], inBuff, inLen);
-			apdu.cmdLen = APDU_HEADER_LENGTH + inLen + 2;
-		} break;
-		case cmd_crd_upd_pin: {} break;
-		case cmd_crd_set_label: {
-			apdu.cmd[OFFSET_LC]        = inLen + 2; // '2' is for 0x81 and LEN fields of the TLV 
-			apdu.cmd[OFFSET_CDATA]     = 0x81;
-			apdu.cmd[OFFSET_CDATA + 1] = inLen;
-			memcpy(&apdu.cmd[OFFSET_CDATA + 2], inBuff, inLen);
-			apdu.cmdLen = APDU_HEADER_LENGTH + inLen + 2;
-		} break;
-		case cmd_crd_create_aes_km: {} break;
-		case cmd_crd_create_aes: {} break;
-		case cmd_crd_gen_ecdsa: {} break;
-
+		case cmd_select_app:
+			
 		case cmd_verify_puk:
-		case cmd_verify_pin: {
-			apdu.cmd[OFFSET_LC] = inLen;
-			memcpy(&apdu.cmd[OFFSET_CDATA], inBuff, inLen);
-			apdu.cmdLen = APDU_HEADER_LENGTH + inLen;
-		} break;
-		case cmd_verify_reset: {
-			// nothing to send to the token in CDATA for this command.
-			apdu.cmdLen = APDU_HEADER_LENGTH;
-		} break;
-
-		case cmd_pso_enc: {} break;
-		case cmd_pso_dec: {} break;
-
+		case cmd_verify_pin:
+		case cmd_pso_enc:
+		case cmd_pso_dec:
+		case cmd_verify_reset:
+		case cmd_get_data:
 		case cmd_lcs_activated:
 		case cmd_lcs_deactivated:
-		case cmd_lcs_terminated: {
-			// nothing to send to the token in CDATA for this command.
-			apdu.cmdLen = APDU_HEADER_LENGTH;
-		} break;
-		// case cmd_get_response: {} break;
+		case cmd_lcs_terminated:
+			memcpy(&apdu.cmd[OFFSET_CDATA], inBuff, inLen);
+		break;
+		
+		case cmd_crd_set_puk:
+		case cmd_crd_set_pin:
+		case cmd_crd_upd_pin:
+		case cmd_crd_set_label:
+		case cmd_crd_create_aes_km:
+			apdu.cmd[OFFSET_LC] += 2; // '2' is for the Tag and Len fields of the TLV DO
+			apdu.cmd[OFFSET_CDATA] = 0x81;
+			apdu.cmd[OFFSET_CDATA + 1] = inLen;
+			memcpy(&apdu.cmd[OFFSET_CDATA + 2], inBuff, inLen);
+			apdu.cmdLen += 2;
+		// fall through
+		case cmd_crd_create_aes:
+		case cmd_crd_gen_ecdsa: break;
 
 		default: {
 			goto _exit;
@@ -154,7 +127,9 @@ _again:
 		if ((outBuff == NULL) || (outLen == NULL)) {
 			goto _exit;
 		}
-		memcpy((uint8_t*)outBuff, apdu.resp, apdu.respLen);
+
+		// Here 'apdu.respLen - 2' is intended to strip out SW bytes
+		memcpy((uint8_t*)outBuff, apdu.resp, apdu.respLen - 2);
 		*outLen = apdu.respLen;
 	}
 
@@ -163,6 +138,43 @@ _again:
 	}
 
 _exit:
+	return rv;
+}
+
+int32_t
+initialize_token(void)
+{
+	int32_t rv = 1;
+	do {
+		if (sc_create_ctx()){
+			break;
+		}
+		
+		if (sc_get_available_readers()){
+			break;
+		}
+			
+		if (sc_card_connect()){
+			break;
+		}
+			
+		rv = 0;
+	} while (0);
+	return rv;
+}
+
+int32_t
+finalize_token(void)
+{
+	int32_t rv = 1;
+	do {
+		if (sc_card_disconnect())
+			break;
+		
+		sc_delete_ctx();
+		rv = 0;
+	} while (0);
+
 	return rv;
 }
 
