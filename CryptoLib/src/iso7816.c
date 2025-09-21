@@ -130,7 +130,7 @@ _again:
 
 		// Here 'apdu.respLen - 2' is intended to strip out SW bytes
 		memcpy((uint8_t*)outBuff, apdu.resp, apdu.respLen - 2);
-		*outLen = apdu.respLen;
+		*outLen = apdu.respLen - 2;
 	}
 
 	if (apdu.sw1 == 0x90) {
