@@ -294,7 +294,7 @@ public class CryptoKey extends Applet implements ISO7816
 			{
 				byte kid = buff[off];
 
-				if (kid >= EIGTH || kid < ZERO || aesKeys[kid] != null) {
+				if (kid >= EIGTH || kid < ZERO) {
 					ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.INVALID_INIT));
 				}
 
@@ -308,14 +308,14 @@ public class CryptoKey extends Applet implements ISO7816
 					ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.ILLEGAL_USE));
 				}
 				
-				aesKeys[kid] = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, len, false);
+				aesKeys[kid] = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, (short)(len * EIGTH), false);
 				aesKeys[kid].setKey(buff, off);
 			} break;
 			case (byte)0x06: // Create DES
 			{
 				byte kid = buff[off];
 
-				if (kid >= EIGTH || kid < ZERO || desKeys[kid] != null) {
+				if (kid >= EIGTH || kid < ZERO) {
 					ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.INVALID_INIT));
 				}
 
@@ -329,7 +329,7 @@ public class CryptoKey extends Applet implements ISO7816
 					ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.ILLEGAL_USE));
 				}
 				
-				desKeys[kid] = (DESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_DES, len, false);
+				desKeys[kid] = (DESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_DES, (short)(len * EIGTH), false);
 				desKeys[kid].setKey(buff, off);
 			} break;
 			case (byte)0x07: // Create ECDSA
@@ -376,6 +376,8 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
 
+		kid = buff[cdataOff];
+
 		if (kid >= EIGTH || kid < ZERO) {
 			ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.ILLEGAL_VALUE));
 		}
@@ -392,7 +394,7 @@ public class CryptoKey extends Applet implements ISO7816
 			}
 		}
 
-		le = aes(buff, cdataOff, lc, mode, kid);
+		le = aes(buff, (short)(cdataOff + (short)1), (short)(lc - (short)1), mode, kid);
 		return le;
 	}
 

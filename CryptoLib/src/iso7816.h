@@ -53,7 +53,7 @@ typedef enum {
 
 extern uint8_t* cmdList[];
 
-int32_t transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* outLen);
+int32_t transmit(cmdEnum cmdID, void* inBuff, uint32_t inLen, void* outBuff, uint32_t* outLen);
 int32_t initialize_token(void);
 int32_t finalize_token(void);
 
@@ -66,7 +66,7 @@ typedef struct {
 	const char* str;
 } cmd_struct;
 
-extern cmd_struct known_commands[];
+// extern cmd_struct known_commands[];
 
 #	define DBG_PRINT_CMD_NAME(buff)         \
 	print_cmd_name(buff);

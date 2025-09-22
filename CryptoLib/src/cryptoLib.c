@@ -2,8 +2,11 @@
 #include "iso7816.h"
 #include <stdlib.h>
 
+#define OUTBUFF_CAPACITY (32 * 1024)
 static uint8_t AID[] = {0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
-static uint16_t aidLen = sizeof(AID);
+static uint32_t aidLen = sizeof(AID);
+static uint8_t outBuff[OUTBUFF_CAPACITY];
+static uint32_t outDataLen = 0;
 
 static CK_BBOOL pkcs11_initialized = CK_FALSE;
 static CK_BBOOL pkcs11_session_opened = CK_FALSE;
@@ -14,6 +17,13 @@ static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
 
 static CK_ULONG ulPinLenMin = 0;
 static CK_ULONG ulPinLenMax = 0;
+
+#if (1)
+#define PRINTFORMAT(val) \
+	printf("%d\n", val);
+#else
+#define PRINTFORMAT(val)
+#endif
 
 CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 {
@@ -39,7 +49,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 	return rv;
 }
 
-
 CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 {
 	CK_RV rv;
@@ -47,15 +56,16 @@ CK_DEFINE_FUNCTION(CK_RV, C_Finalize)(CK_VOID_PTR pReserved)
 	IGNORE(pReserved);
 
 	do {
-
 		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
-		if (CK_FALSE == pkcs11_initialized)
+		if (CK_FALSE == pkcs11_initialized) {
 			break;
+		}
 
 		rv = CKR_FUNCTION_FAILED;
-		if (finalize_token())
+		if (finalize_token()) {
 			break;
-		
+		}
+
 		pkcs11_initialized = CK_FALSE;
 		rv = CKR_OK;
 	} while (0);
@@ -166,8 +176,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetSlotInfo)(CK_SLOT_ID slotID, CK_SLOT_INFO_PTR pIn
 CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 {
 	CK_RV rv;
-	uint8_t* tempBuff = NULL;
-	uint16_t tempBuffLen = 0;
 
 	DBG_PRINT_FUNC_NAME("C_GetTokenInfo")
 
@@ -185,24 +193,17 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 			break;
 
 		rv = CKR_FUNCTION_FAILED;
-
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)){
+		PRINTFORMAT(1)
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
-
-		tempBuffLen = sizeof(CK_TOKEN_INFO);
-		tempBuff = malloc(tempBuffLen);
-		if (tempBuff == NULL) {
+		PRINTFORMAT(2)
+		if (transmit(cmd_get_data, NULL, 0, outBuff, &outDataLen)) {
 			break;
 		}
-
-		if (transmit(cmd_get_data, NULL, 0, tempBuff, &tempBuffLen)) {
-			break;
-		}
-		
+		PRINTFORMAT(3)
 		int32_t offset = 0;
-		int32_t len = 0;
-		uint8_t flags = tempBuff[offset++];
+		uint8_t flags = outBuff[offset++];
 
 		switch (flags) {
 			case 0x01: // LCS CREATION
@@ -223,33 +224,33 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		pInfo->hardwareVersion.major = 0x01;
 		pInfo->hardwareVersion.minor = 0x00;
 
-		pInfo->firmwareVersion.major = tempBuff[offset++];
-		pInfo->firmwareVersion.minor = tempBuff[offset++];
+		pInfo->firmwareVersion.major = outBuff[offset++];
+		pInfo->firmwareVersion.minor = outBuff[offset++];
 
-		ulPinLenMin = tempBuff[offset++];
-		ulPinLenMax = tempBuff[offset++];
+		ulPinLenMin = outBuff[offset++];
+		ulPinLenMax = outBuff[offset++];
 
 		pInfo->ulMinPinLen = ulPinLenMin;
 		pInfo->ulMaxPinLen = ulPinLenMax;
 		
-		len = tempBuff[offset++];
+		int32_t len = outBuff[offset++];
 		memset(pInfo->manufacturerID, ' ', sizeof(pInfo->manufacturerID));
-		memcpy(pInfo->manufacturerID, &tempBuff[offset], len);
+		memcpy(pInfo->manufacturerID, &outBuff[offset], len);
 
 		offset += len;
-		len = tempBuff[offset++];
+		len = outBuff[offset++];
 		memset(pInfo->label, ' ', sizeof(pInfo->label));
-		memcpy(pInfo->label, &tempBuff[offset], len);
+		memcpy(pInfo->label, &outBuff[offset], len);
 
 		offset += len;
-		len = tempBuff[offset++];
+		len = outBuff[offset++];
 		memset(pInfo->model, ' ', sizeof(pInfo->model));
-		memcpy(pInfo->model, &tempBuff[offset], len);
+		memcpy(pInfo->model, &outBuff[offset], len);
 
 		offset += len;
-		len = tempBuff[offset++];
+		len = outBuff[offset++];
 		memset(pInfo->serialNumber, ' ', sizeof(pInfo->serialNumber));
-		memcpy(pInfo->serialNumber, &tempBuff[offset], len);
+		memcpy(pInfo->serialNumber, &outBuff[offset], len);
 
 		pInfo->ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
 		pInfo->ulSessionCount = (CK_TRUE == pkcs11_session_opened) ? 1 : 0;
@@ -265,10 +266,6 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		
 		rv = CKR_OK;
 	} while(0);
-
-	if (tempBuff) {
-		free(tempBuff);
-	}
 	
 	return rv;
 }
@@ -424,16 +421,16 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitToken)(CK_SLOT_ID slotID, CK_UTF8CHAR_PTR pPin, 
 
 		rv = CKR_FUNCTION_FAILED;
 		
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
 
 		uint32_t labelLen = strlen((const char *)pLabel);
-		if (transmit(cmd_crd_set_label, pLabel, labelLen, NULL, 0)) {
+		if (transmit(cmd_crd_set_label, pLabel, labelLen, NULL, NULL)) {
 			break;
 		}
 
-		if (transmit(cmd_crd_set_puk, pPin, ulPinLen, NULL, 0)) {
+		if (transmit(cmd_crd_set_puk, pPin, ulPinLen, NULL, NULL)) {
 			break;
 		}
 		
@@ -473,15 +470,15 @@ CK_DEFINE_FUNCTION(CK_RV, C_InitPIN)(CK_SESSION_HANDLE hSession, CK_UTF8CHAR_PTR
 		
 		rv = CKR_FUNCTION_FAILED;
 		
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
 		
-		if (transmit(cmd_crd_set_pin, pPin, ulPinLen, NULL, 0)) {
+		if (transmit(cmd_crd_set_pin, pPin, ulPinLen, NULL, NULL)) {
 			break;
 		}
 
-		if (transmit(cmd_lcs_activated, NULL, 0, NULL, 0)) {
+		if (transmit(cmd_lcs_activated, NULL, 0, NULL, NULL)) {
 			break;
 		}
 		
@@ -709,13 +706,13 @@ CK_DEFINE_FUNCTION(CK_RV, C_Login)(CK_SESSION_HANDLE hSession, CK_USER_TYPE user
 
 	do {
 		rv = CKR_FUNCTION_FAILED;
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
 		
 		cmdEnum cmdType = userType == CKU_SO ? cmd_verify_puk : cmd_verify_pin;
 		rv = CKR_PIN_INCORRECT;
-		if (transmit(cmdType, pPin, ulPinLen, NULL, 0)) {
+		if (transmit(cmdType, pPin, ulPinLen, NULL, NULL)) {
 			break;
 		}
 		rv = CKR_OK;
@@ -742,11 +739,11 @@ CK_DEFINE_FUNCTION(CK_RV, C_Logout)(CK_SESSION_HANDLE hSession)
 	do {
 		rv = CKR_FUNCTION_FAILED;
 			
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
 		
-		if (transmit(cmd_verify_reset, NULL, 0, NULL, 0)) {
+		if (transmit(cmd_verify_reset, NULL, 0, NULL, NULL)) {
 			break;
 		}
 		
@@ -1223,14 +1220,21 @@ CK_DEFINE_FUNCTION(CK_RV, C_Encrypt)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pDa
 			break;
 
 		rv = CKR_FUNCTION_FAILED;
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
 
-		if (transmit(cmd_pso_enc, pData, ulDataLen, pEncryptedData, (uint16_t *)pulEncryptedDataLen)) {
+#if (1)
+		if (transmit(cmd_pso_enc, pData, ulDataLen, pEncryptedData, (uint32_t*)pulEncryptedDataLen)) {
 			break;
 		}
-
+#else
+		if (transmit(cmd_pso_enc, pData, ulDataLen, outBuff, &outDataLen)) {
+			break;
+		}
+		memcpy(pEncryptedData, outBuff, outDataLen);
+		*pulEncryptedDataLen = outDataLen;
+#endif
 		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
 		rv = CKR_OK;
 	} while (0);
@@ -1443,11 +1447,11 @@ CK_DEFINE_FUNCTION(CK_RV, C_Decrypt)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEn
 			break;
 		
 		rv = CKR_FUNCTION_FAILED;
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
 
-		if (transmit(cmd_pso_enc, pEncryptedData, ulEncryptedDataLen, pData, (uint16_t *)pulDataLen)) {
+		if (transmit(cmd_pso_enc, pEncryptedData, ulEncryptedDataLen, pData, (uint32_t*)pulDataLen)) {
 			break;
 		}
 
@@ -2348,11 +2352,11 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 		}
 		
 		rv = CKR_FUNCTION_FAILED;
-		if (transmit(cmd_select_app, AID, aidLen, NULL, 0)) {
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
 
-		if (transmit(cmd_crd_create_aes, NULL, 0, NULL, 0)) {
+		if (transmit(cmd_crd_create_aes, NULL, 0, NULL, NULL)) {
 			break;
 		}
 

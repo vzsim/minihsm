@@ -3,7 +3,6 @@
 #include "scard_library.h"
 
 static Apdu_t apdu;
-static uint8_t hasResponse = 0;
 
 uint8_t* cmdList[] = {
 	[cmd_select_app]        = (uint8_t[]){0x00, 0xA4, 0x04, 0x00, 0x00},
@@ -35,11 +34,28 @@ uint8_t* cmdList[] = {
 	[cmd_get_response]      = (uint8_t[]){0x00, 0xC0, 0x00, 0x00, 0x00},
 };
 
+static int32_t
+send_command(void)
+{
+	apdu.respLen = RAPDU_LENGTH;
+	return sc_apdu_transmit(apdu.cmd, apdu.cmdLen, apdu.resp, &apdu.respLen);
+}
+
+#if (1)
+#define PRINTFORMAT(val) \
+	printf("%d\n", val);
+#else
+#define PRINTFORMAT(val)
+#endif
+
 static uint8_t
 has_response(void)
 {
 	apdu.sw1 = apdu.resp[apdu.respLen - 2];
 	apdu.sw2 = apdu.resp[apdu.respLen - 1];
+
+	printf("SW1: %02X\n", apdu.sw1);
+	printf("SW2: %02X\n", apdu.sw2);
 
 	if (apdu.sw1  == 0x61) {
 		memcpy(apdu.cmd, cmdList[cmd_get_response], 5);
@@ -52,30 +68,40 @@ has_response(void)
 	return 0;
 }
 
-static int32_t
-send_command(void)
+static uint32_t
+get_response(void* outBuff)
 {
-	int32_t rv = 1;
-	apdu.respLen = RAPDU_LENGTH;
+	uint32_t off = 0;
+	while (1) {
+		
+		if (!has_response()) {
+			break;
+		}
+		
+		if (send_command()) {
+			off = 0xFFFFFFFF;
+			break;
+		}
 
-	// DBG_PRINT_APDU(apdu.cmd, apdu.cmdLen, 1)
-	rv = sc_apdu_transmit(apdu.cmd, apdu.cmdLen, apdu.resp, &apdu.respLen);
-	// DBG_PRINT_APDU(apdu.resp, apdu.respLen, 0)
+		memcpy(outBuff + off, apdu.resp, apdu.respLen - 2);
+		off += apdu.respLen - 2;
+	}
 
-	return rv;
+	return off;	
 }
 
 int32_t
-transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* outLen)
+transmit(cmdEnum cmdID, void* inBuff, uint32_t inLen, void* outBuff, uint32_t* outLen)
 {
 	int32_t rv = 1;
+	uint8_t lc = (uint8_t)inLen;
 
 	DBG_PRINT_CMD_NAME(cmdList[cmdID])
 
-	// First of all, using a cmdID param copy requested command into apdu.cmd buffer
+	// First of all, copy a requested command into the apdu.cmd buffer
 	memcpy(apdu.cmd, cmdList[cmdID], APDU_HEADER_LENGTH);
-	apdu.cmd[OFFSET_LC] = inLen;
-	apdu.cmdLen = APDU_HEADER_LENGTH + inLen;
+	apdu.cmd[OFFSET_LC] = lc;
+	apdu.cmdLen = APDU_HEADER_LENGTH + lc;
 
 	switch (cmdID) {
 		case cmd_select_app:
@@ -89,7 +115,7 @@ transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* o
 		case cmd_lcs_activated:
 		case cmd_lcs_deactivated:
 		case cmd_lcs_terminated:
-			memcpy(&apdu.cmd[OFFSET_CDATA], inBuff, inLen);
+			memcpy(&apdu.cmd[OFFSET_CDATA], inBuff, lc);
 		break;
 		
 		case cmd_crd_set_puk:
@@ -99,43 +125,41 @@ transmit(cmdEnum cmdID, void* inBuff, uint16_t inLen, void* outBuff, uint16_t* o
 		case cmd_crd_create_aes_km:
 			apdu.cmd[OFFSET_LC] += 2; // '2' is for the Tag and Len fields of the TLV DO
 			apdu.cmd[OFFSET_CDATA] = 0x81;
-			apdu.cmd[OFFSET_CDATA + 1] = inLen;
-			memcpy(&apdu.cmd[OFFSET_CDATA + 2], inBuff, inLen);
+			apdu.cmd[OFFSET_CDATA + 1] = lc;
+			memcpy(&apdu.cmd[OFFSET_CDATA + 2], inBuff, lc);
 			apdu.cmdLen += 2;
 		// fall through
 		case cmd_crd_create_aes:
 		case cmd_crd_gen_ecdsa: break;
 
 		default: {
+			PRINTFORMAT(1)
 			goto _exit;
 		}
 	}
-
+	PRINTFORMAT(2)
 	if (apdu.cmdLen > CAPDU_LENGTH) {
 		goto _exit;
 	}
-
-_again:
-	send_command();
-	if (has_response()) {
-		hasResponse = 1;
-		goto _again;
+	PRINTFORMAT(3)
+	if (send_command()) {
+		goto _exit;
 	}
-	
-	if (hasResponse) {
-		hasResponse = 0;
-		if ((outBuff == NULL) || (outLen == NULL)) {
+	PRINTFORMAT(4)
+	if ((outBuff != NULL) && (outLen != NULL)) {
+		PRINTFORMAT(5)
+		*outLen = get_response(outBuff);
+		if (*outLen == 0xFFFFFFFF) {
 			goto _exit;
 		}
-
-		// Here 'apdu.respLen - 2' is intended to strip out SW bytes
-		memcpy((uint8_t*)outBuff, apdu.resp, apdu.respLen - 2);
-		*outLen = apdu.respLen - 2;
 	}
+	PRINTFORMAT(6)
 
 	if (apdu.sw1 == 0x90) {
+		PRINTFORMAT(7)
 		rv = 0;
 	}
+	PRINTFORMAT(8)
 
 _exit:
 	return rv;
@@ -168,9 +192,9 @@ finalize_token(void)
 {
 	int32_t rv = 1;
 	do {
-		if (sc_card_disconnect())
+		if (sc_card_disconnect()) {
 			break;
-		
+		}
 		sc_delete_ctx();
 		rv = 0;
 	} while (0);
