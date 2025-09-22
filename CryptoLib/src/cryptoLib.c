@@ -193,15 +193,15 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 			break;
 
 		rv = CKR_FUNCTION_FAILED;
-		PRINTFORMAT(1)
+		
 		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
 		}
-		PRINTFORMAT(2)
+		
 		if (transmit(cmd_get_data, NULL, 0, outBuff, &outDataLen)) {
 			break;
 		}
-		PRINTFORMAT(3)
+		
 		int32_t offset = 0;
 		uint8_t flags = outBuff[offset++];
 

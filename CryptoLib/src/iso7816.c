@@ -37,8 +37,16 @@ uint8_t* cmdList[] = {
 static int32_t
 send_command(void)
 {
+	int32_t res = 0;
 	apdu.respLen = RAPDU_LENGTH;
-	return sc_apdu_transmit(apdu.cmd, apdu.cmdLen, apdu.resp, &apdu.respLen);
+	res = sc_apdu_transmit(apdu.cmd, apdu.cmdLen, apdu.resp, &apdu.respLen);
+	if (!res) {
+		apdu.sw1 = apdu.resp[apdu.respLen - 2];
+		apdu.sw2 = apdu.resp[apdu.respLen - 1];
+		printf("SW: %02X%02X\n", apdu.sw1, apdu.sw2);
+	}
+
+	return res;
 }
 
 #if (1)
@@ -51,11 +59,8 @@ send_command(void)
 static uint8_t
 has_response(void)
 {
-	apdu.sw1 = apdu.resp[apdu.respLen - 2];
-	apdu.sw2 = apdu.resp[apdu.respLen - 1];
-
-	printf("SW1: %02X\n", apdu.sw1);
-	printf("SW2: %02X\n", apdu.sw2);
+	// apdu.sw1 = apdu.resp[apdu.respLen - 2];
+	// apdu.sw2 = apdu.resp[apdu.respLen - 1];
 
 	if (apdu.sw1  == 0x61) {
 		memcpy(apdu.cmd, cmdList[cmd_get_response], 5);
@@ -133,33 +138,28 @@ transmit(cmdEnum cmdID, void* inBuff, uint32_t inLen, void* outBuff, uint32_t* o
 		case cmd_crd_gen_ecdsa: break;
 
 		default: {
-			PRINTFORMAT(1)
 			goto _exit;
 		}
 	}
-	PRINTFORMAT(2)
+
 	if (apdu.cmdLen > CAPDU_LENGTH) {
 		goto _exit;
 	}
-	PRINTFORMAT(3)
+
 	if (send_command()) {
 		goto _exit;
 	}
-	PRINTFORMAT(4)
+
 	if ((outBuff != NULL) && (outLen != NULL)) {
-		PRINTFORMAT(5)
 		*outLen = get_response(outBuff);
 		if (*outLen == 0xFFFFFFFF) {
 			goto _exit;
 		}
 	}
-	PRINTFORMAT(6)
 
 	if (apdu.sw1 == 0x90) {
-		PRINTFORMAT(7)
 		rv = 0;
 	}
-	PRINTFORMAT(8)
 
 _exit:
 	return rv;
