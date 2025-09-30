@@ -5,5 +5,7 @@ pkcs11-tool --module /workspace/CryptoLib/build/libCryptoKey.so --init-pin --log
 pkcs11-tool --module /workspace/CryptoLib/build/libCryptoKey.so -I
 pkcs11-tool --module /workspace/CryptoLib/build/libCryptoKey.so -T
 
+
+pkcs11-tool --module /workspace/CryptoLib/build/libCryptoKey.so --login --pin 11111 --keygen --key-type AES:16 --label "CommonAES" --id 0
 pkcs11-tool --module /workspace/CryptoLib/build/libCryptoKey.so --login --pin 11111 --encrypt --id 2 -m AES-CBC --iv 0000000000000000 --input-file /workspace/plain_text.txt --output-file /workspace/cipher_text.bin
 pkcs11-tool --module /workspace/CryptoLib/build/libCryptoKey.so --login --pin 11111 --decrypt --id 2 -m AES-CBC --iv 0000000000000000 --input-file /workspace/cipher_text.txt --output-file /workspace/plain_text1.txt

@@ -43,25 +43,14 @@ send_command(void)
 	if (!res) {
 		apdu.sw1 = apdu.resp[apdu.respLen - 2];
 		apdu.sw2 = apdu.resp[apdu.respLen - 1];
-		printf("SW: %02X%02X\n", apdu.sw1, apdu.sw2);
 	}
 
 	return res;
 }
 
-#if (1)
-#define PRINTFORMAT(val) \
-	printf("%d\n", val);
-#else
-#define PRINTFORMAT(val)
-#endif
-
 static uint8_t
 has_response(void)
 {
-	// apdu.sw1 = apdu.resp[apdu.respLen - 2];
-	// apdu.sw2 = apdu.resp[apdu.respLen - 1];
-
 	if (apdu.sw1  == 0x61) {
 		memcpy(apdu.cmd, cmdList[cmd_get_response], 5);
 		apdu.cmd[OFFSET_LC] = apdu.sw2;
@@ -215,11 +204,16 @@ cmd_struct known_commands[] = {
 	{{0x00, 0x25, 0x01, 0x05, 0x00},"CREATE AES KEY"},
 	{{0x00, 0x25, 0x01, 0x07, 0x00},"GENERATE ECDSA"},
 
-	{{0x00, 0x20, 0x00, 0x00, 0x00},"VERIFY PIN"},
+	{{0x00, 0x20, 0x00, 0x00, 0x00},"VERIFY PUK"},
+	{{0x00, 0x20, 0x00, 0x01, 0x00},"VERIFY PIN"},
 	{{0x00, 0x20, 0xFF, 0x00, 0x00},"RESET PIN"},
 	{{0x00, 0x2A, 0x84, 0x80, 0x00},"ENCRYPT"},
 	{{0x00, 0x2A, 0x80, 0x84, 0x00},"DECRYPT"},
-	{{0x00, 0x44, 0x00, 0x00, 0x00},"LCS: SET ACTIVATED"},
+	
+	{{0x00, 0x44, 0x30, 0x00, 0x00},"LCS ACTIVATED"},
+	{{0x00, 0x04, 0x30, 0x00, 0x00},"LCS DEACTIVATED"},
+	{{0x00, 0xE6, 0x30, 0x00, 0x00},"LCS TERMINATED"},
+
 	{{0x00, 0xC0, 0x00, 0x00, 0x00},"GET RESPONSE"},
 };
 
@@ -233,6 +227,6 @@ print_cmd_name(uint8_t* cmd)
 		}
 	}
 
-	printf("UNKNOWN COMMAND\n");
+	printf("\t***UNKNOWN COMMAND***\n");
 }
 #endif

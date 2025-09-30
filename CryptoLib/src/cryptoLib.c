@@ -1,6 +1,7 @@
 #include "cryptoLib.h"
 #include "iso7816.h"
 #include <stdlib.h>
+#include "stdio.h"
 
 #define OUTBUFF_CAPACITY (32 * 1024)
 static uint8_t AID[] = {0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
@@ -18,12 +19,6 @@ static CK_OBJECT_HANDLE pkcs11_mock_find_result = CKR_OBJECT_HANDLE_INVALID;
 static CK_ULONG ulPinLenMin = 0;
 static CK_ULONG ulPinLenMax = 0;
 
-#if (1)
-#define PRINTFORMAT(val) \
-	printf("%d\n", val);
-#else
-#define PRINTFORMAT(val)
-#endif
 
 CK_DEFINE_FUNCTION(CK_RV, C_Initialize)(CK_VOID_PTR pInitArgs)
 {
@@ -274,22 +269,23 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismList)(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMechanismList, CK_ULONG_PTR pulCount)
 {
 	DBG_PRINT_FUNC_NAME("C_GetMechanismList")
-
+	
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
-
+	
 	if (pkcs11_slotID != slotID)
 		return CKR_SLOT_ID_INVALID;
-
+	
 	if (NULL == pulCount)
 		return CKR_ARGUMENTS_BAD;
-
+	
 	if (NULL == pMechanismList)
 	{
 		*pulCount = 9;
 	}
 	else
 	{
+		printf("pulCount = %ld\n", *pulCount);
 		if (9 > *pulCount)
 			return CKR_BUFFER_TOO_SMALL;
 
@@ -322,7 +318,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 
 	if (NULL == pInfo)
 		return CKR_ARGUMENTS_BAD;
-
+	printf("mechanism type = %ld\n", type);
 	switch (type)
 	{
 		case CKM_RSA_PKCS_KEY_PAIR_GEN:
@@ -2342,6 +2338,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 			break;
 		
 		rv = CKR_ATTRIBUTE_VALUE_INVALID;
+
+		printf("template {\n");
 		for (i = 0; i < ulCount; i++)
 		{
 			if (NULL == pTemplate[i].pValue)
@@ -2349,8 +2347,10 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 	
 			if (0 >= pTemplate[i].ulValueLen)
 				break;
+			
+			printf("\tvalue: %.*s", (int)pTemplate[i].ulValueLen, (char*)pTemplate[i].pValue);
 		}
-		
+		printf("}\n");
 		rv = CKR_FUNCTION_FAILED;
 		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
