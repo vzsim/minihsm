@@ -7,7 +7,7 @@
 static uint8_t AID[] = {0xA0, 0x00, 0x00, 0x00, 0x01, 0x01};
 static uint32_t aidLen = sizeof(AID);
 static uint8_t outBuff[OUTBUFF_CAPACITY];
-static uint32_t outDataLen = 0;
+static uint32_t outDataLen = OUTBUFF_CAPACITY;
 
 static CK_BBOOL pkcs11_initialized = CK_FALSE;
 static CK_BBOOL pkcs11_session_opened = CK_FALSE;
@@ -201,19 +201,18 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 		uint8_t flags = outBuff[offset++];
 
 		switch (flags) {
-			case 0x01: // LCS CREATION
-				pInfo->flags = CKF_USER_PIN_TO_BE_CHANGED | CKF_SO_PIN_TO_BE_CHANGED;
-			break;
 			case 0x03: // LCS INITIALIZATION
-				pInfo->flags = CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_TO_BE_CHANGED; //https://meet.google.com/xeg-yegi-oir
+				pInfo->flags = 0;
 			break;
-			case 0x04: // LCS DEACTIVATE
-				pInfo->flags = CKF_USER_PIN_LOCKED;
-			break;
-			case 0x05: // LCS ACTIVATE
+			case 0x05: // LCS ACTIVATED
 				pInfo->flags = CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED | CKF_SO_PUK_INITIALIZED | CKF_USER_PIN_INITIALIZED;
 			break;
+			case 0x04: // LCS DEACTIVATED
+				pInfo->flags = CKF_USER_PIN_LOCKED;
+			break;
 			case 0x0C: // LCS TERMINATED
+				pInfo->flags = CKF_ERROR_STATE;
+			break;
 		}
 
 		pInfo->hardwareVersion.major = 0x01;
@@ -1176,6 +1175,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 			return CKR_FUNCTION_FAILED;
 	}
 
+	outBuff[0] = (uint8_t)hKey;
 	return CKR_OK;
 }
 
@@ -1220,16 +1220,16 @@ CK_DEFINE_FUNCTION(CK_RV, C_Encrypt)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pDa
 			break;
 		}
 
-#if (1)
+#if (0)
 		if (transmit(cmd_pso_enc, pData, ulDataLen, pEncryptedData, (uint32_t*)pulEncryptedDataLen)) {
 			break;
 		}
 #else
-		if (transmit(cmd_pso_enc, pData, ulDataLen, outBuff, &outDataLen)) {
+		// the index '0' is occupied by hKey value
+		memcpy(&outBuff[1], pData, ulDataLen);
+		if (transmit(cmd_pso_enc, outBuff, ulDataLen + 1, pEncryptedData, (uint32_t*)pulEncryptedDataLen)) {
 			break;
 		}
-		memcpy(pEncryptedData, outBuff, outDataLen);
-		*pulEncryptedDataLen = outDataLen;
 #endif
 		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
 		rv = CKR_OK;
