@@ -15,7 +15,7 @@ import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyPair;
-// import javacard.security.RandomData;
+
 import javacardx.crypto.Cipher;
 import javacard.security.KeyBuilder;
 import javacard.security.AESKey;
@@ -120,8 +120,6 @@ public class CryptoKey extends Applet implements ISO7816
 	private AESKey[] aesKeys;
 	private Cipher aesCipher;
 
-	// private RandomData rand;
-
 	public CryptoKey()
 	{
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
@@ -136,10 +134,8 @@ public class CryptoKey extends Applet implements ISO7816
 		aesKeys        = new AESKey[EIGTH];
 		desKeys        = new DESKey[EIGTH];
 
-		// aesKey16       = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
 		aesCipher      = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
 		desCipher      = Cipher.getInstance(Cipher.ALG_DES_CBC_ISO9797_M1, false);
-		// rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 
 		appletState    = JCSystem.makeTransientByteArray((short)3, JCSystem.CLEAR_ON_RESET);
 
@@ -190,7 +186,6 @@ public class CryptoKey extends Applet implements ISO7816
 					le = verify(buff, cdataOff, lc);
 				} break;
 				case INS_MANAGE_SECURITY_ENV: {
-					// le = generateSharedSecret(buff, cdataOff, lc);
 					le = manageSecurityEnvironment(buff, cdataOff, lc);
 				} break;
 				case INS_CHANGE_REFERENCE_DATA: {
@@ -323,7 +318,7 @@ public class CryptoKey extends Applet implements ISO7816
 			{
 				byte kid = buff[off];
 
-				if (kid >= EIGTH || kid < ZERO) {
+				if (kid > EIGTH || kid < ZERO) {
 					ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.INVALID_INIT));
 				}
 
@@ -372,9 +367,8 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		short le = ZERO;
 
-		short cmd  = Util.getShort(buff, OFFSET_P1);//(short)(((short)p1 << (short)8) | ((short)p2 & (short)0x00FF));
-		byte mode = 0;
-		// byte kid = 0;
+		short cmd = ZERO;
+		byte mode = ZERO;
 
 		// The ISO 7816-8, clause 5.3.1 states: "for this command, when verification related operation
 		// is considered, SW1-SW2 set to '6300' or '63CX' indicates that a verification failed."
@@ -388,17 +382,11 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
 
-		/*
-		 tempRamBuff[ZERO] = MSE_ALGO_AND_KID_SELECTED;
-		tempRamBuff[ONE] = algo;
-		tempRamBuff[TWO] = kid;
-		 */
-		// kid = buff[cdataOff];
-
-		// if (kid >= EIGTH || kid < ZERO) {
-		// 	ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.ILLEGAL_VALUE));
-		// }
-
+		if (tempRamBuff[ZERO] != MSE_ALGO_AND_KID_SELECTED) {
+			ISOException.throwIt(SW_CONDITIONS_NOT_SATISFIED);
+		}
+		
+		cmd = Util.getShort(buff, OFFSET_P1);
 		switch (cmd) {
 			case (short)0x8084: { // ISO 7816-8, clause 5.3.9
 				mode = Cipher.MODE_DECRYPT;
@@ -411,7 +399,16 @@ public class CryptoKey extends Applet implements ISO7816
 			}
 		}
 
-		le = aes(buff, (short)(cdataOff + (short)1), (short)(lc - (short)1), mode);
+		switch (tempRamBuff[ONE]) {
+			case 0x01: // AES
+				le = aes(buff, cdataOff, lc, mode);
+			break;
+			case 0x02: // 3DES
+				le = des(buff, cdataOff, lc, mode);
+			break;
+		}
+
+		tempRamBuff[ZERO] = ZERO; // just in case: reset the MSE_ALGO_AND_KID_SELECTED flag.
 		return le;
 	}
 
@@ -427,10 +424,22 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		short le = ZERO;
 		short kid = tempRamBuff[TWO];
-		
+
 		aesCipher.init(aesKeys[kid], mode);
 		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
 		le += aesCipher.doFinal(buff, le, (short)(lc - le), tempRamBuff, le);
+		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
+		return le;
+	}
+
+	private short des(byte[] buff, short cdataOff, short lc, byte mode)
+	{
+		short le = ZERO;
+		short kid = tempRamBuff[TWO];
+
+		desCipher.init(desKeys[kid], mode);
+		le = desCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le += desCipher.doFinal(buff, le, (short)(lc - le), tempRamBuff, le);
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
@@ -608,7 +617,11 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 	/**
-	 * MANAGE SECURITY ENVIRONMENT (INS = 0x22), ISO 7816-4, clause 11.5.11.
+	 * MANAGE SECURITY ENVIRONMENT (INS = 0x22), ISO 7816-4, clause 11.5.11.<p>
+	 * 
+	 * Either generates a shared secret or prepares a cryptographic primitive by means of
+	 * algorithm type (AES or 3DES) and a KeyID.<p>
+	 * This method must be called before PSO.
 	 * @param buff
 	 * @param cdataOff
 	 * @param lc
@@ -688,7 +701,7 @@ public class CryptoKey extends Applet implements ISO7816
 			kid = buff[off]; // 83h (within range 0-7)
 		}
 
-		if ((kid >= EIGTH || kid < ZERO) || (algo >= THREE || algo < ZERO)) {
+		if ((kid > EIGTH || kid < ZERO) || (algo >= THREE || algo < ZERO)) {
 			ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.ILLEGAL_VALUE));
 		}
 
