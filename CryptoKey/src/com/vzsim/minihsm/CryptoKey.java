@@ -598,7 +598,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if ((LCS != APP_STATE_ACTIVATED) && !puk.isValidated()) {
+		if ((LCS == APP_STATE_DEACTIVATED) && !puk.isValidated()) {
 			ISOException.throwIt(SW_CONDITIONS_NOT_SATISFIED);
 		}
 
