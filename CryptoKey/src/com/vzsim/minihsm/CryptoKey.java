@@ -420,7 +420,6 @@ public class CryptoKey extends Applet implements ISO7816
 	 * VERIFY (INS = 0x20), ISO 7816-4, clause 11.5.6.
 	 * This method supports the following operations:
 	 * <ul>
-	 * 	<li> VERIFY PUK: <b> [P1=00, P2=00] [PUK] </b>
 	 * 	<li> VERIFY PIN: <b> [P1=00, P2=01] [PIN] </b>
 	 * </ul>
 	 * @param buff
@@ -432,7 +431,6 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
-		OwnerPIN ptrPin = null;
 		short pinType = OFFSET_APP_STATE_PIN;
 
 		byte appState = LCS;
@@ -462,22 +460,15 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
 
-		if (p2 == ZERO) {
-			ptrPin = puk;
-			pinType = OFFSET_APP_STATE_PUK;
-		} else {
-			ptrPin = pin;
-		}
-
 		// Check the PIN.
-		if (!ptrPin.check(buff, cdataOff, (byte)lc)) {
+		if (!pin.check(buff, cdataOff, (byte)lc)) {
 			
 			appletState[pinType] = ZERO;
-			if (ptrPin.getTriesRemaining() < (byte)1) {
+			if (pin.getTriesRemaining() < (byte)1) {
 				LCS = APP_STATE_DEACTIVATED;
 			}
 
-			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | ptrPin.getTriesRemaining()));
+			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
 		}
 
 		appletState[pinType] = ~ZERO;
@@ -495,7 +486,8 @@ public class CryptoKey extends Applet implements ISO7816
 	 * 	<li> P3 == 3 CDATA: absent							// get PUK remaining tries
 	 * </ul>
 	 * As for changing the PIN, unlike changeReferenceData() method, this one updates it if and only if
-	 * a user have submitted the PUK.
+	 * a user have submitted the PUK. Also the former method is available if LCS is ACTIVATED,
+	 * while this one only when LCS is DEACTIVATED.
 	 * @param buff     incoming data (either PIN or PUK)
 	 * @param cdataOff an offset within buff
 	 * @param lc       a length of incoming data
@@ -555,8 +547,8 @@ public class CryptoKey extends Applet implements ISO7816
 	
 	/**
 	 * ACTIVATE (INS = 0x44), ISO 7816-9, clause 6.5<p>
-	 * ACTIVATE (INS = 0x04), ISO 7816-9, clause 6.4<p>
-	 * ACTIVATE (INS = 0xE6), ISO 7816-9, clause 6.6<p>
+	 * DEACTIVATE (INS = 0x04), ISO 7816-9, clause 6.4<p>
+	 * TERMINATE (INS = 0xE6), ISO 7816-9, clause 6.6<p>
 	 * 
 	 * @param buff
 	 * @param cdataOff
@@ -572,6 +564,14 @@ public class CryptoKey extends Applet implements ISO7816
 
 		if (p1 != (byte)0x30 && p2 != (byte)ZERO) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
+		}
+
+		if (LCS == APP_STATE_TERMINATED) {
+			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
+		}
+
+		if ((LCS != APP_STATE_ACTIVATED) && !puk.isValidated()) {
+			ISOException.throwIt(SW_CONDITIONS_NOT_SATISFIED);
 		}
 
 		switch (ins) {
