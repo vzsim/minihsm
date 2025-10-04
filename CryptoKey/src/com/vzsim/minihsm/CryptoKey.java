@@ -15,7 +15,7 @@ import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
 import javacard.security.KeyPair;
-// import javacard.security.RandomData;
+
 import javacardx.crypto.Cipher;
 import javacard.security.KeyBuilder;
 import javacard.security.AESKey;
@@ -24,7 +24,9 @@ public class CryptoKey extends Applet implements ISO7816
 {
 	private static final short ZERO        = (short)0;
 	private static final short ONE         = (short)1;
-	private static final short EIGTH        = (short)8;
+	private static final short TWO         = (short)2;
+	private static final short THREE       = (short)3;
+	private static final short EIGTH       = (short)8;
 	private static final short SIXTEEN     = (short)16;
 	private static final short TWENTY_FOUR = (short)24;
 	private static final short THIRTY_TWO  = (short)32;
@@ -39,14 +41,19 @@ public class CryptoKey extends Applet implements ISO7816
 	/** The set of supported INStructions */
 	private static final byte INS_GET_DATA              = (byte)0xCA;
 	private static final byte INS_VERIFY                = (byte)0x20;
-	private static final byte INS_GEN_SHARED_SECRET     = (byte)0x22;
     private static final byte INS_CHANGE_REFERENCE_DATA = (byte)0x25;
 	private static final byte INS_PSO                   = (byte)0x2A;
 	private static final byte INS_RESET_RETRY_COUNTER   = (byte)0x2D;
 	private static final byte INS_DEACTIVATE            = (byte)0x04;
 	private static final byte INS_ACTIVATE              = (byte)0x44;
 	private static final byte INS_TERMINATE             = (byte)0xE6;
+	private static final byte INS_MANAGE_SECURITY_ENV   = (byte)0x22;
 
+	// composed of P1=81 (SET) and P2=A6 (CRT CAT). See ISO7816-4, clause 11.5.11 and clause 10.3, table 54
+	private static final short MSE_GEN_SHARED       = (short)0x81A6;
+	// composed of P1=81 (SET) and P2=B8 (CRT CT). See ISO7816-4, clause 11.5.11 and clause 10.3, table 54
+	private static final short MSE_SET_ALGO_AND_KID = (short)0x81B8;
+	private static final byte MSE_ALGO_AND_KID_SELECTED = (byte)0x5A;
 
 	private static final byte PIN_MAX_TRIES             = (byte)0x03;
 	private static final byte PUK_MAX_TRIES             = (byte)0x0A;
@@ -113,8 +120,6 @@ public class CryptoKey extends Applet implements ISO7816
 	private AESKey[] aesKeys;
 	private Cipher aesCipher;
 
-	// private RandomData rand;
-
 	public CryptoKey()
 	{
 		puk = new OwnerPIN(PUK_MAX_TRIES, PIN_MAX_LENGTH);
@@ -129,10 +134,8 @@ public class CryptoKey extends Applet implements ISO7816
 		aesKeys        = new AESKey[EIGTH];
 		desKeys        = new DESKey[EIGTH];
 
-		// aesKey16       = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
 		aesCipher      = Cipher.getInstance(Cipher.ALG_AES_CBC_ISO9797_M1, false);
 		desCipher      = Cipher.getInstance(Cipher.ALG_DES_CBC_ISO9797_M1, false);
-		// rand           = RandomData.getInstance(RandomData.ALG_PSEUDO_RANDOM);
 
 		appletState    = JCSystem.makeTransientByteArray((short)3, JCSystem.CLEAR_ON_RESET);
 
@@ -182,8 +185,8 @@ public class CryptoKey extends Applet implements ISO7816
 				case INS_VERIFY: {
 					le = verify(buff, cdataOff, lc);
 				} break;
-				case INS_GEN_SHARED_SECRET: {
-					le = generateSharedSecret(buff, cdataOff, lc);
+				case INS_MANAGE_SECURITY_ENV: {
+					le = manageSecurityEnvironment(buff, cdataOff, lc);
 				} break;
 				case INS_CHANGE_REFERENCE_DATA: {
 					le = changeReferenceData(buff, cdataOff, lc);
@@ -315,7 +318,7 @@ public class CryptoKey extends Applet implements ISO7816
 			{
 				byte kid = buff[off];
 
-				if (kid >= EIGTH || kid < ZERO) {
+				if (kid > EIGTH || kid < ZERO) {
 					ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.INVALID_INIT));
 				}
 
@@ -347,8 +350,14 @@ public class CryptoKey extends Applet implements ISO7816
 
 	/**
 	 * PERFORM SECURITY OPERATION (INS = 0x2A), ISO 7816-8, clause 5.3.
-	 * 
-	 * 
+	 * Initiates the following operations:<br/>
+	 * <ul>
+	 *     <li> encipherment
+	 *     <li> decipherment
+	 * </ul>
+	 * <b>P1</b> defines the expected RDATA.
+	 * <b>P2</b> defines the command CDATA.
+	 * <br/>
 	 * @param buff
 	 * @param cdataOff
 	 * @param lc
@@ -358,11 +367,8 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		short le = ZERO;
 
-		byte p1 = buff[OFFSET_P1];
-		byte p2 = buff[OFFSET_P2];
-		short cmd  = (short)(((short)p1 << (short)8) | ((short)p2 & (short)0x00FF));
-		byte mode = 0;
-		byte kid = 0;
+		short cmd = ZERO;
+		byte mode = ZERO;
 
 		// The ISO 7816-8, clause 5.3.1 states: "for this command, when verification related operation
 		// is considered, SW1-SW2 set to '6300' or '63CX' indicates that a verification failed."
@@ -376,12 +382,11 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
 
-		kid = buff[cdataOff];
-
-		if (kid >= EIGTH || kid < ZERO) {
-			ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.ILLEGAL_VALUE));
+		if (tempRamBuff[ZERO] != MSE_ALGO_AND_KID_SELECTED) {
+			ISOException.throwIt(SW_CONDITIONS_NOT_SATISFIED);
 		}
-
+		
+		cmd = Util.getShort(buff, OFFSET_P1);
 		switch (cmd) {
 			case (short)0x8084: { // ISO 7816-8, clause 5.3.9
 				mode = Cipher.MODE_DECRYPT;
@@ -394,7 +399,16 @@ public class CryptoKey extends Applet implements ISO7816
 			}
 		}
 
-		le = aes(buff, (short)(cdataOff + (short)1), (short)(lc - (short)1), mode, kid);
+		switch (tempRamBuff[ONE]) {
+			case 0x01: // AES
+				le = aes(buff, cdataOff, lc, mode);
+			break;
+			case 0x02: // 3DES
+				le = des(buff, cdataOff, lc, mode);
+			break;
+		}
+
+		tempRamBuff[ZERO] = ZERO; // just in case: reset the MSE_ALGO_AND_KID_SELECTED flag.
 		return le;
 	}
 
@@ -406,12 +420,26 @@ public class CryptoKey extends Applet implements ISO7816
 	 * @param lc the length on the cryptogram
 	 * @return the length of plaintext
 	 */
-	private short aes(byte[] buff, short cdataOff, short lc, byte mode, short kid)
+	private short aes(byte[] buff, short cdataOff, short lc, byte mode)
 	{
 		short le = ZERO;
+		short kid = tempRamBuff[TWO];
+
 		aesCipher.init(aesKeys[kid], mode);
 		le = aesCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
 		le += aesCipher.doFinal(buff, le, (short)(lc - le), tempRamBuff, le);
+		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
+		return le;
+	}
+
+	private short des(byte[] buff, short cdataOff, short lc, byte mode)
+	{
+		short le = ZERO;
+		short kid = tempRamBuff[TWO];
+
+		desCipher.init(desKeys[kid], mode);
+		le = desCipher.update(buff, cdataOff, lc, tempRamBuff, ZERO);
+		le += desCipher.doFinal(buff, le, (short)(lc - le), tempRamBuff, le);
 		Util.arrayCopyNonAtomic(tempRamBuff, ZERO, buff, ZERO, le);
 		return le;
 	}
@@ -589,27 +617,54 @@ public class CryptoKey extends Applet implements ISO7816
 	}
 
 	/**
-	 * GENERATE SHARED SECRET (INS = 0x22), ISO 7816-4, clause 11.5.11.
+	 * MANAGE SECURITY ENVIRONMENT (INS = 0x22), ISO 7816-4, clause 11.5.11.<p>
+	 * 
+	 * Either generates a shared secret or prepares a cryptographic primitive by means of
+	 * algorithm type (AES or 3DES) and a KeyID.<p>
+	 * This method must be called before PSO.
 	 * @param buff
 	 * @param cdataOff
 	 * @param lc
-	 * @return 65 bytes of token's public key followed by a shared secret.
+	 * @return 
 	 */
-	private short generateSharedSecret(byte[] buff, short cdataOff, short lc)
+	private short manageSecurityEnvironment(byte[] buff, short cdataOff, short lc)
 	{
 		short le = ZERO;
-		byte p1 = buff[OFFSET_P1];
-
-		if (p1 != ZERO) {
-			ISOException.throwIt(SW_INCORRECT_P1P2);
-		}
+		short p1p2 = Util.getShort(buff, OFFSET_P1);
 
 		if (LCS != APP_STATE_ACTIVATED || appletState[OFFSET_APP_STATE_PIN] != ~ZERO) {
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
+		switch (p1p2) {
+			case MSE_GEN_SHARED: {
+				le = generateSharedSecret(buff, cdataOff, lc);
+			} break;
+			case MSE_SET_ALGO_AND_KID: {
+				le = selectAlgoAndKey(buff, cdataOff, lc);
+			} break;
+			default: {
+				ISOException.throwIt(SW_FUNC_NOT_SUPPORTED);
+			}
+		}
+		
+		return le;
+	}
+	
+	private short generateSharedSecret(byte[] buff, short cdataOff, short lc)
+	{
+		short le = ZERO;
+
+		// ISO7816-4, clause 11.5.11 enforces the usage of 0x94 tag when deriving a key. 
+		short len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x94);
+		short off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x94);
+
+		if ((len != ONE) || off == ~ZERO) {
+			ISOException.throwIt(SW_DATA_INVALID);
+		}
+
 		// generate a shared secret by means of host's public key
-		ecDhPlain.generateSecret(buff, cdataOff, lc, tempRamBuff, ZERO);
+		ecDhPlain.generateSecret(buff, off, len, tempRamBuff, ZERO);
 		
 		// Fetch the public key to be sent back
 		le = ecFPpubKey.getW(buff, ZERO);
@@ -620,6 +675,41 @@ public class CryptoKey extends Applet implements ISO7816
 		return le;
 	}
 
+	private short selectAlgoAndKey(byte[] buff, short cdataOff, short lc)
+	{
+		short le = ZERO;
+		byte kid = ZERO;
+		byte algo = ZERO;
+
+		// the values below are taken from (see ISO7816-4, clause 10.3.2). It's likely
+		// that the gist eluded me because of pig latin in ISO7816. Thus, the overview is highly appreciated.
+		
+		short len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x80);
+		short off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x80);
+
+		if ((len != ONE) || off == ~ZERO) {
+			ISOException.throwIt(SW_DATA_INVALID);
+		} else {
+			algo = buff[off]; // 80h The cryptographic mechanism reference (01h - AES, 02h - 3DES)
+		}
+
+		len = UtilTLV.tlvGetLen(buff, cdataOff, lc, (byte)0x83);
+		off = UtilTLV.tlvGetValue(buff, cdataOff, lc, (byte)0x83);
+		if ((len != ONE) || off == ~ZERO) {
+			ISOException.throwIt(SW_DATA_INVALID);
+		} else {
+			kid = buff[off]; // 83h (within range 0-7)
+		}
+
+		if ((kid > EIGTH || kid < ZERO) || (algo >= THREE || algo < ZERO)) {
+			ISOException.throwIt((short)(SW_CRYPTO_EXCEPTION | CryptoException.ILLEGAL_VALUE));
+		}
+
+		tempRamBuff[ZERO] = MSE_ALGO_AND_KID_SELECTED;
+		tempRamBuff[ONE] = algo;
+		tempRamBuff[TWO] = kid;
+		return le;
+	}
 
 	/**
 	 * GET DATA apdu (INS = 0xCA), ISO 7816-4, clause 11.4.3.
@@ -628,8 +718,7 @@ public class CryptoKey extends Applet implements ISO7816
 	 */
 	private short getData(byte[] buff)
 	{
-		short p1p2  = (short)((short)buff[OFFSET_P1] << (short)8);
-		      p1p2 |= (short)((short)buff[OFFSET_P2] & (short)0x00FF);
+		short p1p2  = Util.getShort(buff, OFFSET_P1);
 
 		short offset = ZERO;
 		switch (p1p2) {
@@ -660,7 +749,7 @@ public class CryptoKey extends Applet implements ISO7816
 			case (short)0x2A80: // PSO decrypt
 			case (short)0x2A84: // PSO encrypt
 			case (short)0x2000: // verify
-			case (short)0x2200: // Establish SM: generate shared
+			case (short)0x2281: // manage security environment
 			case (short)0x2500:	// change ref data
 			case (short)0x2D00: // reset retry counter: activate card and set new PIN
 			case (short)0x2D01: // reset retry counter: activate card and reset PIN
@@ -670,6 +759,4 @@ public class CryptoKey extends Applet implements ISO7816
 		}
 		return result;
 	}
-
-
 }
