@@ -77,8 +77,7 @@ public class CryptoKey extends Applet implements ISO7816
 	/** To return the applet to the ACTIVATED state a PUK must be presented. */
 	private static final byte APP_STATE_DEACTIVATED     = (byte)0x04;
 
-	/** There is no chance to return the applet to the ACTIVATED state.
-	 * The only option left is to erase entire memory by means of presenting the PUK. */
+	/** There is no way to return the applet to the ACTIVATED state. */
 	private static final byte APP_STATE_TERMINATED      = (byte)0x0C;
 
 	private static final byte API_VERSION_MAJOR			= (byte)0x00;
@@ -459,7 +458,6 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
-		short pinType = OFFSET_APP_STATE_PIN;
 
 		byte appState = LCS;
 
@@ -471,7 +469,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
-		// At the CREATION and INITIALIZATION states no PIN is set yet, thus there is no error at all.
+		// At the INITIALIZATION stage no PIN is set yet, thus there is no error at all.
 		if (lc == ZERO && (appState <= APP_STATE_INITIALIZATION)) {
 			ISOException.throwIt(SW_NO_ERROR);
 		} else if ((p1 == ~ZERO) && (lc == ZERO) && (appState == APP_STATE_ACTIVATED)) {
@@ -491,7 +489,7 @@ public class CryptoKey extends Applet implements ISO7816
 		// Check the PIN.
 		if (!pin.check(buff, cdataOff, (byte)lc)) {
 			
-			appletState[pinType] = ZERO;
+			appletState[OFFSET_APP_STATE_PIN] = ZERO;
 			if (pin.getTriesRemaining() < (byte)1) {
 				LCS = APP_STATE_DEACTIVATED;
 			}
@@ -499,7 +497,7 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
 		}
 
-		appletState[pinType] = ~ZERO;
+		appletState[OFFSET_APP_STATE_PIN] = ~ZERO;
 		return ZERO;
 	}
 
@@ -529,12 +527,12 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_COMMAND_NOT_ALLOWED);
 		}
 
-		if (p1 < (byte)ZERO || p1 > (byte)0x03) {
+		if (p1 < ZERO || p1 > THREE) {
 			ISOException.throwIt(SW_INCORRECT_P1P2);
 		}
 
 		// PUK tries counter requested.
-		if (p1 == (byte)0x03) {
+		if (p1 == THREE) {
 			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | puk.getTriesRemaining()));
 		}
 
