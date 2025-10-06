@@ -346,7 +346,6 @@ public class CryptoKey extends Applet implements ISO7816
 		return ZERO;
 	}
 
-
 	/**
 	 * PERFORM SECURITY OPERATION (INS = 0x2A), ISO 7816-8, clause 5.3.
 	 * Initiates the following operations:<br/>
@@ -410,7 +409,6 @@ public class CryptoKey extends Applet implements ISO7816
 		tempRamBuff[ZERO] = ZERO; // just in case: reset the MSE_ALGO_AND_KID_SELECTED flag.
 		return le;
 	}
-
 
 	/**
 	 * Performs decryption of the input data using an algorithm specified in ... (TODO)
@@ -501,7 +499,6 @@ public class CryptoKey extends Applet implements ISO7816
 		return ZERO;
 	}
 
-
 	/**
 	 * RESET RETRY COUNTER (INS = 0x2D), ISO 7816-4, clause 11.5.10.
 	 * <p>
@@ -570,7 +567,7 @@ public class CryptoKey extends Applet implements ISO7816
 
 		return ZERO;
 	}
-	
+
 	/**
 	 * ACTIVATE (INS = 0x44), ISO 7816-9, clause 6.5<p>
 	 * DEACTIVATE (INS = 0x04), ISO 7816-9, clause 6.4<p>
