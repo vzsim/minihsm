@@ -445,6 +445,7 @@ public class CryptoKey extends Applet implements ISO7816
 	 * VERIFY (INS = 0x20), ISO 7816-4, clause 11.5.6.
 	 * This method supports the following operations:
 	 * <ul>
+	 *  <li> VERIFY PUK: <b> [P1=00, P2=00] [PUK] </b>
 	 * 	<li> VERIFY PIN: <b> [P1=00, P2=01] [PIN] </b>
 	 * </ul>
 	 * @param buff
@@ -456,6 +457,8 @@ public class CryptoKey extends Applet implements ISO7816
 	{
 		byte p1 = buff[OFFSET_P1];
 		byte p2 = buff[OFFSET_P2];
+		OwnerPIN ptrPin = null;
+		short pinType = OFFSET_APP_STATE_PIN;
 
 		byte appState = LCS;
 
@@ -484,18 +487,25 @@ public class CryptoKey extends Applet implements ISO7816
 			ISOException.throwIt(SW_WRONG_LENGTH);
 		}
 
+		if (p2 == ZERO) {
+			ptrPin = puk;
+			pinType = OFFSET_APP_STATE_PUK;
+		} else {
+			ptrPin = pin;
+		}
+
 		// Check the PIN.
-		if (!pin.check(buff, cdataOff, (byte)lc)) {
+		if (!ptrPin.check(buff, cdataOff, (byte)lc)) {
 			
-			appletState[OFFSET_APP_STATE_PIN] = ZERO;
-			if (pin.getTriesRemaining() < (byte)1) {
+			appletState[pinType] = ZERO;
+			if (ptrPin.getTriesRemaining() < (byte)1) {
 				LCS = APP_STATE_DEACTIVATED;
 			}
 
-			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | pin.getTriesRemaining()));
+			ISOException.throwIt((short)(SW_PIN_TRIES_REMAINING | ptrPin.getTriesRemaining()));
 		}
 
-		appletState[OFFSET_APP_STATE_PIN] = ~ZERO;
+		appletState[pinType] = ~ZERO;
 		return ZERO;
 	}
 

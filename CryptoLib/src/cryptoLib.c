@@ -268,26 +268,31 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetTokenInfo)(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR p
 CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismList)(CK_SLOT_ID slotID, CK_MECHANISM_TYPE_PTR pMechanismList, CK_ULONG_PTR pulCount)
 {
 	DBG_PRINT_FUNC_NAME("C_GetMechanismList")
-	
+	printf("1\n");
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
-	
+	printf("2\n");
 	if (pkcs11_slotID != slotID)
 		return CKR_SLOT_ID_INVALID;
-	
+	printf("3\n");
 	if (NULL == pulCount)
 		return CKR_ARGUMENTS_BAD;
-	
+	printf("4\n");
 	if (NULL == pMechanismList)
 	{
-		*pulCount = 9;
+		printf("5\n");
+		*pulCount = 2;
 	}
 	else
 	{
 		printf("pulCount = %ld\n", *pulCount);
-		if (9 > *pulCount)
+		if (*pulCount < 2)
 			return CKR_BUFFER_TOO_SMALL;
-
+		
+		pMechanismList[0] = CKM_DES3_CBC;
+		pMechanismList[1] = CKM_AES_CBC;
+		*pulCount = 2;
+#if(0)
 		pMechanismList[0] = CKM_RSA_PKCS_KEY_PAIR_GEN;
 		pMechanismList[1] = CKM_RSA_PKCS;
 		pMechanismList[2] = CKM_SHA1_RSA_PKCS;
@@ -297,8 +302,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismList)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 		pMechanismList[6] = CKM_SHA_1;
 		pMechanismList[7] = CKM_XOR_BASE_AND_DATA;
 		pMechanismList[8] = CKM_AES_CBC;
-
 		*pulCount = 9;
+#endif
 	}
 
 	return CKR_OK;
@@ -374,8 +379,10 @@ CK_DEFINE_FUNCTION(CK_RV, C_GetMechanismInfo)(CK_SLOT_ID slotID, CK_MECHANISM_TY
 			pInfo->flags = CKF_ENCRYPT | CKF_DECRYPT;
 			break;
 
-		default:
+		default:{
+			printf("Skipping\n");
 			return CKR_MECHANISM_INVALID;
+		}
 	}
 
 	return CKR_OK;
@@ -1099,6 +1106,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_FindObjectsFinal)(CK_SESSION_HANDLE hSession)
 CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJECT_HANDLE hKey)
 {
 	DBG_PRINT_FUNC_NAME("C_EncryptInit")
+	
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
 
@@ -1140,8 +1148,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 			if ((NULL == pMechanism->pParameter) || (8 != pMechanism->ulParameterLen))
 				return CKR_MECHANISM_PARAM_INVALID;
 
-			if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
-				return CKR_KEY_TYPE_INCONSISTENT;
+			// if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
+			// 	return CKR_KEY_TYPE_INCONSISTENT;
 
 			break;
 
@@ -1150,8 +1158,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 			if ((NULL == pMechanism->pParameter) || (16 != pMechanism->ulParameterLen))
 				return CKR_MECHANISM_PARAM_INVALID;
 
-			if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
-				return CKR_KEY_TYPE_INCONSISTENT;
+			// if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
+			// 	return CKR_KEY_TYPE_INCONSISTENT;
 
 			break;
 
@@ -1220,17 +1228,12 @@ CK_DEFINE_FUNCTION(CK_RV, C_Encrypt)(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pDa
 			break;
 		}
 
-#if (0)
-		if (transmit(cmd_pso_enc, pData, ulDataLen, pEncryptedData, (uint32_t*)pulEncryptedDataLen)) {
-			break;
-		}
-#else
 		// the index '0' is occupied by hKey value
 		memcpy(&outBuff[1], pData, ulDataLen);
 		if (transmit(cmd_pso_enc, outBuff, ulDataLen + 1, pEncryptedData, (uint32_t*)pulEncryptedDataLen)) {
 			break;
 		}
-#endif
+	
 		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_NONE;
 		rv = CKR_OK;
 	} while (0);
@@ -2307,6 +2310,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 {
 	CK_ULONG i = 0;
 	CK_RV rv = CKR_ARGUMENTS_BAD;
+	
+	DBG_PRINT_FUNC_NAME("C_GenerateKey")
 
 	do {
 		if (NULL == pMechanism)
@@ -2321,6 +2326,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 		if (NULL == phKey)
 			break;
 		
+		printf("phKey: %d\n", *phKey);
+
 		rv = CKR_CRYPTOKI_NOT_INITIALIZED;
 		if (CK_FALSE == pkcs11_initialized)
 			break;
@@ -2339,7 +2346,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 		
 		rv = CKR_ATTRIBUTE_VALUE_INVALID;
 
-		printf("template {\n");
+		printf("ulCount: %d\n", ulCount);
 		for (i = 0; i < ulCount; i++)
 		{
 			if (NULL == pTemplate[i].pValue)
@@ -2347,10 +2354,9 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 	
 			if (0 >= pTemplate[i].ulValueLen)
 				break;
-			
-			printf("\tvalue: %.*s", (int)pTemplate[i].ulValueLen, (char*)pTemplate[i].pValue);
+			printf("%*.s\n", pTemplate[i].ulValueLen, (uint8_t*)pTemplate[i].pValue);
 		}
-		printf("}\n");
+
 		rv = CKR_FUNCTION_FAILED;
 		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
@@ -2364,7 +2370,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKey)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 	} while (0);
 
 
-	*phKey = PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY;
+	// *phKey = PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY;
 
 	return rv;
 }
@@ -2391,6 +2397,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_GenerateKeyPair)(CK_SESSION_HANDLE hSession,
 											CK_OBJECT_HANDLE_PTR phPrivateKey)
 {
 	CK_ULONG i = 0;
+
+	DBG_PRINT_FUNC_NAME("C_GenerateKeyPair")
 
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -2544,6 +2552,8 @@ CK_DEFINE_FUNCTION(CK_RV, C_UnwrapKey)(CK_SESSION_HANDLE hSession, CK_MECHANISM_
 CK_DEFINE_FUNCTION(CK_RV, C_DeriveKey)(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJECT_HANDLE hBaseKey, CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulAttributeCount, CK_OBJECT_HANDLE_PTR phKey)
 {
 	CK_ULONG i = 0;
+
+	DBG_PRINT_FUNC_NAME("C_DeriveKey")
 
 	if (CK_FALSE == pkcs11_initialized)
 		return CKR_CRYPTOKI_NOT_INITIALIZED;
