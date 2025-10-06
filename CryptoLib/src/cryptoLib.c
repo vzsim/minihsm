@@ -1105,6 +1105,7 @@ CK_DEFINE_FUNCTION(CK_RV, C_FindObjectsFinal)(CK_SESSION_HANDLE hSession)
 
 CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, CK_OBJECT_HANDLE hKey)
 {
+	CK_RV rv = CKR_OK;
 	DBG_PRINT_FUNC_NAME("C_EncryptInit")
 	
 	if (CK_FALSE == pkcs11_initialized)
@@ -1121,70 +1122,88 @@ CK_DEFINE_FUNCTION(CK_RV, C_EncryptInit)(CK_SESSION_HANDLE hSession, CK_MECHANIS
 	if (NULL == pMechanism)
 		return CKR_ARGUMENTS_BAD;
 
-	switch (pMechanism->mechanism)
-	{
-		case CKM_RSA_PKCS:
+	// switch (pMechanism->mechanism)
+	// {
+	// 	case CKM_RSA_PKCS:
 
-			if ((NULL != pMechanism->pParameter) || (0 != pMechanism->ulParameterLen))
-				return CKR_MECHANISM_PARAM_INVALID;
+	// 		if ((NULL != pMechanism->pParameter) || (0 != pMechanism->ulParameterLen))
+	// 			return CKR_MECHANISM_PARAM_INVALID;
 
-			if (PKCS11_MOCK_CK_OBJECT_HANDLE_PUBLIC_KEY != hKey)
-				return CKR_KEY_TYPE_INCONSISTENT;
+	// 		if (PKCS11_MOCK_CK_OBJECT_HANDLE_PUBLIC_KEY != hKey)
+	// 			return CKR_KEY_TYPE_INCONSISTENT;
 
-			break;
+	// 		break;
 
-		case CKM_RSA_PKCS_OAEP:
+	// 	case CKM_RSA_PKCS_OAEP:
 
-			if ((NULL == pMechanism->pParameter) || (sizeof(CK_RSA_PKCS_OAEP_PARAMS) != pMechanism->ulParameterLen))
-				return CKR_MECHANISM_PARAM_INVALID;
+	// 		if ((NULL == pMechanism->pParameter) || (sizeof(CK_RSA_PKCS_OAEP_PARAMS) != pMechanism->ulParameterLen))
+	// 			return CKR_MECHANISM_PARAM_INVALID;
 
-			if (PKCS11_MOCK_CK_OBJECT_HANDLE_PUBLIC_KEY != hKey)
-				return CKR_KEY_TYPE_INCONSISTENT;
+	// 		if (PKCS11_MOCK_CK_OBJECT_HANDLE_PUBLIC_KEY != hKey)
+	// 			return CKR_KEY_TYPE_INCONSISTENT;
 
-			break;
+	// 		break;
 
-		case CKM_DES3_CBC:
+	// 	case CKM_DES3_CBC:
 
-			if ((NULL == pMechanism->pParameter) || (8 != pMechanism->ulParameterLen))
-				return CKR_MECHANISM_PARAM_INVALID;
+	// 		if ((NULL == pMechanism->pParameter) || (8 != pMechanism->ulParameterLen))
+	// 			return CKR_MECHANISM_PARAM_INVALID;
 
-			// if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
-			// 	return CKR_KEY_TYPE_INCONSISTENT;
+	// 		// if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
+	// 		// 	return CKR_KEY_TYPE_INCONSISTENT;
 
-			break;
+	// 		break;
 
-		case CKM_AES_CBC:
+	// 	case CKM_AES_CBC:
 			
-			if ((NULL == pMechanism->pParameter) || (16 != pMechanism->ulParameterLen))
-				return CKR_MECHANISM_PARAM_INVALID;
+	// 		if ((NULL == pMechanism->pParameter) || (16 != pMechanism->ulParameterLen))
+	// 			return CKR_MECHANISM_PARAM_INVALID;
 
-			// if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
-			// 	return CKR_KEY_TYPE_INCONSISTENT;
+	// 		// if (PKCS11_MOCK_CK_OBJECT_HANDLE_SECRET_KEY != hKey)
+	// 		// 	return CKR_KEY_TYPE_INCONSISTENT;
 
+	// 		break;
+
+	// 	default:
+
+	// 		return CKR_MECHANISM_INVALID;
+	// }
+
+	// switch (pkcs11_active_operation)
+	// {
+	// 	case PKCS11_CRYPTOLIB_CK_OPERATION_NONE:
+	// 		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_ENCRYPT;
+	// 		break;
+	// 	case PKCS11_CRYPTOLIB_CK_OPERATION_DIGEST:
+	// 		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_DIGEST_ENCRYPT;
+	// 		break;
+	// 	case PKCS11_CRYPTOLIB_CK_OPERATION_SIGN:
+	// 		pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_SIGN_ENCRYPT;
+	// 		break;
+	// 	default:
+	// 		return CKR_FUNCTION_FAILED;
+	// }
+
+	do {
+		
+		rv = CKR_FUNCTION_FAILED;
+		if (transmit(cmd_select_app, AID, aidLen, NULL, NULL)) {
 			break;
+		}
+		
+		uint8_t algo_and_keyid[2];
+		algo_and_keyid[0] = 0x01; // aes
+		algo_and_keyid[1] = hKey; // keyid
 
-		default:
-
-			return CKR_MECHANISM_INVALID;
-	}
-
-	switch (pkcs11_active_operation)
-	{
-		case PKCS11_CRYPTOLIB_CK_OPERATION_NONE:
-			pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_ENCRYPT;
+		rv = CKR_PIN_INCORRECT;
+		if (transmit(cmd_mse_set_algo_and_kid, algo_and_keyid, 2, NULL, NULL)) {
 			break;
-		case PKCS11_CRYPTOLIB_CK_OPERATION_DIGEST:
-			pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_DIGEST_ENCRYPT;
-			break;
-		case PKCS11_CRYPTOLIB_CK_OPERATION_SIGN:
-			pkcs11_active_operation = PKCS11_CRYPTOLIB_CK_OPERATION_SIGN_ENCRYPT;
-			break;
-		default:
-			return CKR_FUNCTION_FAILED;
-	}
+		}
+		rv = CKR_OK;
+	} while (0);
 
 	outBuff[0] = (uint8_t)hKey;
-	return CKR_OK;
+	return rv;
 }
 
 

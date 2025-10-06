@@ -682,7 +682,6 @@ public class CryptoKey extends Applet implements ISO7816
 
 	private short selectAlgoAndKey(byte[] buff, short cdataOff, short lc)
 	{
-		short le = ZERO;
 		byte kid = ZERO;
 		byte algo = ZERO;
 
@@ -713,7 +712,7 @@ public class CryptoKey extends Applet implements ISO7816
 		tempRamBuff[ZERO] = MSE_ALGO_AND_KID_SELECTED;
 		tempRamBuff[ONE] = algo;
 		tempRamBuff[TWO] = kid;
-		return le;
+		return ZERO;
 	}
 
 	/**

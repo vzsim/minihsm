@@ -40,6 +40,8 @@ typedef enum {
 	cmd_verify_pin,
 	cmd_verify_reset,
 
+	cmd_mse_set_algo_and_kid,
+	cmd_mse_generate_shared,
 	cmd_pso_enc,
 	cmd_pso_dec,
 

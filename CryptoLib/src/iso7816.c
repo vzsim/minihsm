@@ -22,6 +22,10 @@ uint8_t* cmdList[] = {
 	[cmd_verify_pin]        = (uint8_t[]){0x00, 0x20, 0x00, 0x01, 0x00},
 	[cmd_verify_reset]      = (uint8_t[]){0x00, 0x20, 0xFF, 0x00, 0x00},
 
+	// manage security environment
+	[cmd_mse_set_algo_and_kid] = (uint8_t[]){0x00, 0x22, 0x81, 0xB8, 0x00},
+	[cmd_mse_generate_shared]  = (uint8_t[]){0x00, 0x22, 0x81, 0xA6, 0x00},
+
 	// Perform security operations
 	[cmd_pso_enc]           = (uint8_t[]){0x00, 0x2A, 0x84, 0x80, 0x00},
 	[cmd_pso_dec]           = (uint8_t[]){0x00, 0x2A, 0x80, 0x84, 0x00},
@@ -98,10 +102,22 @@ transmit(cmdEnum cmdID, void* inBuff, uint32_t inLen, void* outBuff, uint32_t* o
 	apdu.cmdLen = APDU_HEADER_LENGTH + lc;
 
 	switch (cmdID) {
+		
+		case cmd_mse_set_algo_and_kid: {
+			apdu.cmd[OFFSET_LC] += 4;
+			apdu.cmd[OFFSET_CDATA] = 0x80;
+			apdu.cmd[OFFSET_CDATA + 1] = 0x01;
+			apdu.cmd[OFFSET_CDATA + 2] = ((uint8_t*)inBuff)[0];
+			apdu.cmd[OFFSET_CDATA + 3] = 0x83;
+			apdu.cmd[OFFSET_CDATA + 4] = 0x01;
+			apdu.cmd[OFFSET_CDATA + 5] = ((uint8_t*)inBuff)[1];
+			apdu.cmdLen += 4;
+		} break;
 		case cmd_select_app:
-			
+		case cmd_mse_generate_shared:
 		case cmd_verify_puk:
 		case cmd_verify_pin:
+
 		case cmd_pso_enc:
 		case cmd_pso_dec:
 		case cmd_verify_reset:
